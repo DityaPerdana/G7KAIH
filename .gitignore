@@ -32,6 +32,23 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# Security - never commit these files
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+.secrets/
+credentials.json
+service-account.json
+
+# Backup files that may contain sensitive data
+*.backup
+*.bak
+*.old
+*_backup.*
 
 # vercel
 .vercel
