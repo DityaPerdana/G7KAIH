@@ -4,9 +4,29 @@ This directory contains the database schema and migration files for the G7 KAIH 
 
 ## Files
 
-- **`schema.sql`** - Complete database schema with all tables, indexes, triggers, and RLS policies
+- **`schema.sql`** - Complete database schema for Supabase (uses `auth.users`)
+- **`schema-postgresql.sql`** - Complete database schema for standalone PostgreSQL (uses `public.users`)
+- **`MIGRATION.md`** - Guide for migrating from Supabase to PostgreSQL
+
+## Which Schema Should I Use?
+
+### Use `schema.sql` if:
+- You're using **Supabase** for hosting
+- You want Supabase Auth to handle authentication
+- You want Row Level Security (RLS) managed by Supabase
+
+### Use `schema-postgresql.sql` if:
+- You're using **standalone PostgreSQL** (self-hosted, AWS RDS, etc.)
+- You want to manage authentication in your application
+- You're migrating away from Supabase
+
+See [MIGRATION.md](./MIGRATION.md) for detailed migration instructions.
 
 ## Quick Start
+
+### For Supabase
+
+Using the Supabase-compatible schema (`schema.sql`):
 
 ### Option 1: Run in Supabase SQL Editor (Recommended)
 
@@ -34,6 +54,24 @@ supabase db push
 ```bash
 psql "postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres" < database/schema.sql
 ```
+
+### For Standalone PostgreSQL
+
+Using the PostgreSQL-compatible schema (`schema-postgresql.sql`):
+
+#### Option 1: Run via psql
+
+```bash
+psql -U your_user -d your_database -f database/schema-postgresql.sql
+```
+
+#### Option 2: Import via GUI
+
+1. Open your PostgreSQL client (pgAdmin, DBeaver, etc.)
+2. Connect to your database
+3. Run the contents of `schema-postgresql.sql`
+
+**Important:** The PostgreSQL schema requires you to implement authentication in your application. See [MIGRATION.md](./MIGRATION.md) for details.
 
 ## Schema Overview
 
