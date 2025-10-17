@@ -33,7 +33,18 @@ In-depth backend architecture documentation covering:
 
 **When to use:** When setting up the project, understanding system architecture, or contributing to backend development.
 
-### 3. **[Teacher Dashboard Refactor (TEACHER_DASHBOARD_REFACTOR.md)](./TEACHER_DASHBOARD_REFACTOR.md)**
+### 3. **[Database Guide (DATABASE.md)](./DATABASE.md)**
+Comprehensive database documentation with visual explanations:
+- Entity Relationship Diagrams with ASCII art
+- Detailed table explanations with real-world examples
+- Relationship diagrams showing how tables connect
+- Step-by-step data flow examples (student submission, teacher view, etc.)
+- Common SQL queries with explanations
+- Database maintenance and cleanup guides
+
+**When to use:** When you need to understand the database structure, write complex queries, or plan schema changes.
+
+### 4. **[Teacher Dashboard Refactor (TEACHER_DASHBOARD_REFACTOR.md)](./TEACHER_DASHBOARD_REFACTOR.md)**
 Details about the teacher dashboard refactoring:
 - Route structure and organization
 - Component breakdown
@@ -42,7 +53,7 @@ Details about the teacher dashboard refactoring:
 
 **When to use:** When working on teacher-related features or understanding the dashboard structure.
 
-### 4. **[Parent Features (PARENT_FEATURES_README.md)](./PARENT_FEATURES_README.md)**
+### 5. **[Parent Features (PARENT_FEATURES_README.md)](./PARENT_FEATURES_README.md)**
 Parent dashboard implementation guide:
 - Database changes required
 - API endpoints for parents
@@ -69,9 +80,10 @@ Parent dashboard implementation guide:
 ### For Backend Developers
 
 1. **Architecture:** [BACKEND.md - Architecture](./BACKEND.md#architecture)
-2. **Database Schema:** [BACKEND.md - Database Schema](./BACKEND.md#database-schema)
-3. **Key Features:** [BACKEND.md - Key Features](./BACKEND.md#key-features)
-4. **API Layer:** [BACKEND.md - API Layer](./BACKEND.md#api-layer)
+2. **Database Schema:** [DATABASE.md - Complete Guide](./DATABASE.md)
+3. **Database Tables:** [BACKEND.md - Database Schema](./BACKEND.md#database-schema)
+4. **Key Features:** [BACKEND.md - Key Features](./BACKEND.md#key-features)
+5. **API Layer:** [BACKEND.md - API Layer](./BACKEND.md#api-layer)
 
 ### For DevOps/Deployment
 

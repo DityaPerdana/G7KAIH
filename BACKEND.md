@@ -127,6 +127,10 @@ export async function POST(request: Request) {
 
 ## Database Schema
 
+> 💡 **For a more comprehensive database guide with visual diagrams, real-world examples, and step-by-step data flows, see [DATABASE.md](./DATABASE.md)**
+
+This section provides the technical SQL schema definitions. For a beginner-friendly explanation with Entity Relationship Diagrams and usage examples, refer to the complete Database Guide.
+
 ### Core Tables
 
 #### `user_profiles`
