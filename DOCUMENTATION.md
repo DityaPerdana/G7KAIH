@@ -41,8 +41,9 @@ Comprehensive database documentation with visual explanations:
 - Step-by-step data flow examples (student submission, teacher view, etc.)
 - Common SQL queries with explanations
 - Database maintenance and cleanup guides
+- **Ready-to-use SQL schema** in [`database/schema.sql`](./database/schema.sql)
 
-**When to use:** When you need to understand the database structure, write complex queries, or plan schema changes.
+**When to use:** When you need to understand the database structure, write complex queries, plan schema changes, or set up the database.
 
 ### 4. **[Teacher Dashboard Refactor (TEACHER_DASHBOARD_REFACTOR.md)](./TEACHER_DASHBOARD_REFACTOR.md)**
 Details about the teacher dashboard refactoring:
@@ -81,9 +82,10 @@ Parent dashboard implementation guide:
 
 1. **Architecture:** [BACKEND.md - Architecture](./BACKEND.md#architecture)
 2. **Database Schema:** [DATABASE.md - Complete Guide](./DATABASE.md)
-3. **Database Tables:** [BACKEND.md - Database Schema](./BACKEND.md#database-schema)
-4. **Key Features:** [BACKEND.md - Key Features](./BACKEND.md#key-features)
-5. **API Layer:** [BACKEND.md - API Layer](./BACKEND.md#api-layer)
+3. **SQL Schema File:** [database/schema.sql](./database/schema.sql) - Ready to run
+4. **Database Tables:** [BACKEND.md - Database Schema](./BACKEND.md#database-schema)
+5. **Key Features:** [BACKEND.md - Key Features](./BACKEND.md#key-features)
+6. **API Layer:** [BACKEND.md - API Layer](./BACKEND.md#api-layer)
 
 ### For DevOps/Deployment
 

@@ -129,6 +129,8 @@ export async function POST(request: Request) {
 
 > 💡 **For a more comprehensive database guide with visual diagrams, real-world examples, and step-by-step data flows, see [DATABASE.md](./DATABASE.md)**
 
+> 📁 **Ready-to-use SQL Schema**: The complete database schema is available in [`database/schema.sql`](./database/schema.sql). Run this in your Supabase instance to set up all tables, indexes, and security policies.
+
 This section provides the technical SQL schema definitions. For a beginner-friendly explanation with Entity Relationship Diagrams and usage examples, refer to the complete Database Guide.
 
 ### Core Tables

@@ -17,6 +17,8 @@
 
 The G7 KAIH system uses **PostgreSQL** (via Supabase) as its database. The database is designed to support an educational activity tracking system where students submit daily activities, teachers monitor their class, and parents can view their children's progress.
 
+> 📁 **Ready-to-use SQL Schema**: The complete database schema is available in [`database/schema.sql`](./database/schema.sql). See [`database/README.md`](./database/README.md) for setup instructions.
+
 ### Key Database Features
 
 1. **Role-Based Access**: Different user types (admin, teacher, student, parent) with varying permissions
