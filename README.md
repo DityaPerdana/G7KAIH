@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Documentation
+
+- **[API Documentation](./API.md)** - Comprehensive API endpoint reference and usage guide
+- **[Backend Architecture](./BACKEND.md)** - Detailed backend architecture, database schema, and development guide
+- **[Teacher Dashboard Refactor](./TEACHER_DASHBOARD_REFACTOR.md)** - Teacher dashboard structure and refactoring details
+- **[Parent Features](./PARENT_FEATURES_README.md)** - Parent dashboard features and implementation
+
 ## Getting Started
 
 First, run the development server:
