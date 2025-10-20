@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import React, { useEffect, useState } from 'react'
+import React, { Suspense, useEffect, useState } from 'react'
 import { login } from './action'
 import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
 
@@ -22,6 +22,33 @@ declare global {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageSkeleton />}>
+      <LoginPageContent />
+    </Suspense>
+  )
+}
+
+function LoginPageSkeleton() {
+  return (
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
+      <div className="animate-pulse space-y-6 w-full max-w-sm">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-24 h-24 rounded-full bg-gray-200" />
+          <div className="h-4 w-40 bg-gray-200 rounded" />
+          <div className="h-3 w-28 bg-gray-100 rounded" />
+        </div>
+        <div className="space-y-3">
+          <div className="h-12 bg-gray-100 rounded" />
+          <div className="h-12 bg-gray-100 rounded" />
+          <div className="h-10 bg-gray-200 rounded" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LoginPageContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -199,7 +226,7 @@ export default function LoginPage() {
 
       {/* Google Sign In Button */}
       <div className="w-full max-w-sm mb-6">
-  <GoogleSignInButton origin={originParam} />
+        <GoogleSignInButton origin={originParam} />
       </div>
 
       {/* Terms and Conditions */}
