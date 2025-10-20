@@ -1,3 +1,4 @@
+import { getStudentRoleIds, isAdminRole, isStudentRole } from "@/utils/lib/roles"
 import { createClient } from "@/utils/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
       .eq("userid", user.id)
       .single()
 
-    if (!profile || profile.roleid !== 3) { // roleid 3 = admin
+    if (!profile || !isAdminRole(profile.roleid)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 })
     }
 
@@ -29,14 +30,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify student exists and has the correct role
+    const studentRoleIds = getStudentRoleIds()
+
     const { data: student, error: studentError } = await supabase
       .from("user_profiles")
       .select("userid, roleid")
       .eq("userid", studentId)
-      .eq("roleid", 5) // must be a student
+      .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
       .single()
 
-    if (studentError || !student) {
+    if (studentError || !student || !isStudentRole(student.roleid)) {
       return NextResponse.json({ error: "Student not found" }, { status: 404 })
     }
 

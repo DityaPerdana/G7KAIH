@@ -57,8 +57,8 @@ export async function GET(
           value,
           created_at,
           updated_at,
-          isValidateByTeacher,
-          isValidateByParent,
+          isvalidatebyteacher,
+          isvalidatebyparent,
           field:fieldid (
             fieldid,
             label,
@@ -106,6 +106,9 @@ export async function GET(
         
         const field = Array.isArray(fv.field) ? fv.field[0] : fv.field
         
+        const teacherValidated = Boolean(fv.isvalidatebyteacher)
+        const parentValidated = Boolean(fv.isvalidatebyparent)
+
         return {
           id: fv.id,
           field: {
@@ -121,11 +124,11 @@ export async function GET(
             url: file.cloudinary_url
           })),
           validation: {
-            status: fv.isValidateByTeacher && fv.isValidateByParent ? 'fully_validated' :
-                    fv.isValidateByTeacher ? 'teacher_validated' :
-                    fv.isValidateByParent ? 'parent_validated' : 'pending',
-            byTeacher: fv.isValidateByTeacher || false,
-            byParent: fv.isValidateByParent || false
+            status: teacherValidated && parentValidated ? 'fully_validated' :
+                    teacherValidated ? 'teacher_validated' :
+                    parentValidated ? 'parent_validated' : 'pending',
+            byTeacher: teacherValidated,
+            byParent: parentValidated
           },
           created_at: fv.created_at,
           updated_at: fv.updated_at

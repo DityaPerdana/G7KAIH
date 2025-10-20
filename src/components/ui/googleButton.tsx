@@ -3,14 +3,24 @@
 import { createClient } from '@/utils/supabase/client'
 import Image from 'next/image'
 
-export default function GoogleSignInButton() {
+interface GoogleSignInButtonProps {
+  origin?: string
+}
+
+export default function GoogleSignInButton({ origin = '/' }: GoogleSignInButtonProps) {
   const supabase = createClient()
 
   const handleGoogleSignIn = async () => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+    const destination = origin?.startsWith('/') ? origin : '/'
+    const redirectUrl = baseUrl
+      ? `${baseUrl}/auth/callback?origin=${encodeURIComponent(destination)}`
+      : `https://g7kaih.tefa-bcs.org/auth/callback?origin=${encodeURIComponent(destination)}`
+
+  const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://g7kaih.tefa-bcs.org/auth/callback'
+        redirectTo: redirectUrl
       }
     })
     

@@ -1,6 +1,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
+import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
+
 const roleRedirectMap: Record<string, string> = {
   unknown: '/unknown',
   student: '/siswa',
@@ -51,7 +53,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const origin = resolveAppOrigin(request)
-  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, origin))
+  const requestedRedirect = sanitizeRedirectPath(searchParams.get('origin') ?? searchParams.get('next'))
+  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, origin), 302)
 
   if (code) {
     const supabase = await createClient()
@@ -120,6 +123,10 @@ export async function GET(request: Request) {
         }
 
         console.log('User profile:', profile) // Debug log
+
+        if (requestedRedirect) {
+          return redirectTo(requestedRedirect)
+        }
 
         if (profile?.roleid) {
           // Get role name separately

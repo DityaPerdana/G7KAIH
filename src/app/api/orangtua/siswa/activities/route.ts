@@ -1,3 +1,4 @@
+import { getStudentRoleIds, isAdminRole, isParentRole, isStudentRole } from "@/utils/lib/roles"
 import { createAdminClient } from "@/utils/supabase/admin"
 import { createClient } from "@/utils/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
@@ -15,13 +16,12 @@ export async function GET(request: NextRequest) {
 
     // Use admin client for reliable data access
     const adminClient = await createAdminClient()
-    
-    // Get current user profile and verify parent role
+
+    // Get current user profile and role info
     const { data: parentProfile, error: parentError } = await adminClient
       .from("user_profiles")
       .select("userid, username, roleid, parent_of_userid")
       .eq("userid", user.id)
-      .eq("roleid", 4) // Must be parent
       .single()
 
     if (parentError || !parentProfile) {
@@ -30,10 +30,13 @@ export async function GET(request: NextRequest) {
       }, { status: 403 })
     }
 
-    if (!parentProfile.parent_of_userid) {
+    const actingAsParent = isParentRole(parentProfile.roleid)
+    const actingAsAdmin = isAdminRole(parentProfile.roleid)
+
+    if (!actingAsParent && !actingAsAdmin) {
       return NextResponse.json({ 
-        error: "No student linked to this parent account"
-      }, { status: 400 })
+        error: "Access denied: Only parents can access this endpoint"
+      }, { status: 403 })
     }
 
     // Get query parameters for filtering
@@ -41,17 +44,44 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(url.searchParams.get("page") || 1))
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 20)))
     const validationStatus = url.searchParams.get("validationStatus") // 'pending', 'teacher', 'parent', 'both'
+    const requestedStudentId = url.searchParams.get("studentId")?.trim() || null
     const offset = (page - 1) * limit
 
+    if (actingAsParent) {
+      if (!parentProfile.parent_of_userid) {
+        return NextResponse.json({ 
+          error: "No student linked to this parent account"
+        }, { status: 400 })
+      }
+
+      if (requestedStudentId && requestedStudentId !== parentProfile.parent_of_userid) {
+        return NextResponse.json({
+          error: "Access denied: Cannot view other students"
+        }, { status: 403 })
+      }
+    }
+
+    const effectiveStudentId = actingAsParent
+      ? parentProfile.parent_of_userid
+      : requestedStudentId || parentProfile.parent_of_userid || null
+
+    if (!effectiveStudentId) {
+      return NextResponse.json({ 
+        error: "No student specified for activity lookup"
+      }, { status: 400 })
+    }
+
     // Verify student exists
+    const studentRoleIds = getStudentRoleIds()
+
     const { data: studentProfile, error: studentError } = await adminClient
       .from("user_profiles")
-      .select("userid, username, email, kelas")
-      .eq("userid", parentProfile.parent_of_userid)
-      .eq("roleid", 5)
+      .select("userid, username, email, kelas, roleid")
+      .eq("userid", effectiveStudentId)
+      .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
       .single()
 
-    if (studentError || !studentProfile) {
+    if (studentError || !studentProfile || !isStudentRole(studentProfile.roleid)) {
       return NextResponse.json({ 
         error: "Student not found or invalid"
       }, { status: 404 })
@@ -65,8 +95,8 @@ export async function GET(request: NextRequest) {
         activityid,
         fieldid,
         value,
-        isValidateByTeacher,
-        isValidateByParent,
+        isvalidatebyteacher,
+        isvalidatebyparent,
         created_at,
         updated_at
       `)
@@ -75,16 +105,16 @@ export async function GET(request: NextRequest) {
     if (validationStatus) {
       switch (validationStatus) {
         case 'pending':
-          fieldValuesQuery = fieldValuesQuery.eq("isValidateByTeacher", false).eq("isValidateByParent", false)
+          fieldValuesQuery = fieldValuesQuery.eq("isvalidatebyteacher", false).eq("isvalidatebyparent", false)
           break
         case 'teacher':
-          fieldValuesQuery = fieldValuesQuery.eq("isValidateByTeacher", true).eq("isValidateByParent", false)
+          fieldValuesQuery = fieldValuesQuery.eq("isvalidatebyteacher", true).eq("isvalidatebyparent", false)
           break
         case 'parent':
-          fieldValuesQuery = fieldValuesQuery.eq("isValidateByTeacher", false).eq("isValidateByParent", true)
+          fieldValuesQuery = fieldValuesQuery.eq("isvalidatebyteacher", false).eq("isvalidatebyparent", true)
           break
         case 'both':
-          fieldValuesQuery = fieldValuesQuery.eq("isValidateByTeacher", true).eq("isValidateByParent", true)
+          fieldValuesQuery = fieldValuesQuery.eq("isvalidatebyteacher", true).eq("isvalidatebyparent", true)
           break
       }
     }
@@ -242,6 +272,8 @@ export async function GET(request: NextRequest) {
 
     // Transform the data for better frontend consumption
     const transformedActivities = paginatedFieldValues.map((fieldValue: any) => {
+      const teacherValidated = Boolean(fieldValue.isvalidatebyteacher)
+      const parentValidated = Boolean(fieldValue.isvalidatebyparent)
       const activity = activitiesMap.get(fieldValue.activityid)
       const field = fieldsMap.get(fieldValue.fieldid)
       const kegiatan = kegiatanMap.get(activity?.kegiatanid)
@@ -255,13 +287,13 @@ export async function GET(request: NextRequest) {
         id: fieldValue.id,
         value: fieldValue.value,
         validation: {
-          byTeacher: fieldValue.isValidateByTeacher,
-          byParent: fieldValue.isValidateByParent,
-          status: fieldValue.isValidateByTeacher && fieldValue.isValidateByParent 
+          byTeacher: teacherValidated,
+          byParent: parentValidated,
+          status: teacherValidated && parentValidated 
             ? 'fully_validated' 
-            : fieldValue.isValidateByTeacher 
+            : teacherValidated 
             ? 'teacher_validated' 
-            : fieldValue.isValidateByParent 
+            : parentValidated 
             ? 'parent_validated' 
             : 'pending'
         },
@@ -368,12 +400,26 @@ export async function PATCH(request: NextRequest) {
       .from("user_profiles")
       .select("userid, roleid, parent_of_userid")
       .eq("userid", user.id)
-      .eq("roleid", 4)
       .single()
 
-    if (parentError || !parentProfile || !parentProfile.parent_of_userid) {
+    if (parentError || !parentProfile) {
       return NextResponse.json({ 
-        error: "Access denied: Only parents with linked students can validate activities"
+        error: "Access denied: Only parents or admins can validate activities"
+      }, { status: 403 })
+    }
+
+    const actingAsParent = isParentRole(parentProfile.roleid)
+    const actingAsAdmin = isAdminRole(parentProfile.roleid)
+
+    if (!actingAsParent && !actingAsAdmin) {
+      return NextResponse.json({ 
+        error: "Access denied: Only parents or admins can validate activities"
+      }, { status: 403 })
+    }
+
+    if (actingAsParent && !parentProfile.parent_of_userid) {
+      return NextResponse.json({ 
+        error: "Access denied: Parent account has no linked student"
       }, { status: 403 })
     }
 
@@ -398,7 +444,7 @@ export async function PATCH(request: NextRequest) {
 
     // Type assertion for the nested data
     const activity = fieldValue.aktivitas as any
-    if (activity?.userid !== parentProfile.parent_of_userid) {
+    if (actingAsParent && activity?.userid !== parentProfile.parent_of_userid) {
       return NextResponse.json({ 
         error: "Access denied: This activity does not belong to your linked student"
       }, { status: 403 })
@@ -408,7 +454,7 @@ export async function PATCH(request: NextRequest) {
     const { error: updateError } = await adminClient
       .from("aktivitas_field_values")
       .update({ 
-        isValidateByParent: isValidatedByParent,
+        isvalidatebyparent: isValidatedByParent,
         updated_at: new Date().toISOString()
       })
       .eq("id", fieldValueId)

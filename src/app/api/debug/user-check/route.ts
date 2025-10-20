@@ -1,3 +1,4 @@
+import { getStudentRoleIds } from "@/utils/lib/roles"
 import { createAdminClient } from "@/utils/supabase/admin"
 import { NextResponse } from "next/server"
 
@@ -17,10 +18,12 @@ export async function GET() {
     console.log("Direct user lookup:", { user, userError })
 
     // Check all users with role 5
+    const studentRoleIds = getStudentRoleIds()
+
     const { data: allStudents, error: studentsError } = await adminClient
       .from("user_profiles")
       .select("userid, username, roleid")
-      .eq("roleid", 5)
+      .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
       .limit(10)
 
     console.log("All students:", { allStudents, studentsError })

@@ -109,15 +109,6 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
         <div className="px-6 py-4">
           <div className="flex items-center gap-4">
             <SidebarTrigger />
-            <Button
-              onClick={handleBack}
-              variant="ghost"
-              size="sm"
-              className="mr-2"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Kembali
-            </Button>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">
                 Detail Field - {student.name || `Siswa ${student.class}`}

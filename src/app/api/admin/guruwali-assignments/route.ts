@@ -1,3 +1,4 @@
+import { getStudentRoleIds, isAdminRole, isStudentRole } from "@/utils/lib/roles"
 import { createClient } from "@/utils/supabase/server"
 import { NextResponse } from "next/server"
 
@@ -17,21 +18,24 @@ export async function GET() {
       .eq("userid", user.id)
       .single()
 
-    if (!profile || profile.roleid !== 3) { // roleid 3 = admin
+    if (!profile || !isAdminRole(profile.roleid)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 })
     }
 
-    // Get all students (roleid = 5) with their assigned guruwali
+    const studentRoleIds = getStudentRoleIds()
+
+    // Get all students with their assigned guruwali
     const { data: students, error: studentsError } = await supabase
       .from("user_profiles")
       .select(`
         userid,
         username,
         email,
+        roleid,
         kelas,
         guruwali_userid
       `)
-      .eq("roleid", 5) // students only
+      .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
       .order("username")
 
     if (studentsError) {
@@ -56,12 +60,14 @@ export async function GET() {
     )
 
     // Transform the data into the format expected by the frontend
-    const assignments = (students || []).map(student => ({
+    const assignments = (students || [])
+      .filter(student => isStudentRole(student.roleid))
+      .map(student => ({
       student: {
         userid: student.userid,
         username: student.username,
         email: student.email,
-        roleid: 5,
+        roleid: student.roleid,
         kelas: student.kelas,
         guruwali_userid: student.guruwali_userid
       },

@@ -40,27 +40,6 @@ export default function OrangTuaPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("activities")
 
-  const [isUnlinking, setIsUnlinking] = useState(false)
-
-  const handleUnlink = async () => {
-    if (!window.confirm("Apakah Anda yakin ingin memutuskan hubungan dengan siswa ini?")) return
-
-    setIsUnlinking(true)
-    try {
-      const response = await fetch("/api/orangtua/siswa", { method: "DELETE" })
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result.error || "Gagal memutuskan hubungan")
-      }
-      // Refresh data after unlinking
-      await fetchParentStudentData()
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setIsUnlinking(false)
-    }
-  }
-
   const fetchParentStudentData = async () => {
     try {
       setError(null)
@@ -189,13 +168,6 @@ export default function OrangTuaPage() {
                   <Badge variant="default" className="bg-green-600">
                     Siswa Terhubung
                   </Badge>
-                  <button
-                    onClick={handleUnlink}
-                    disabled={isUnlinking}
-                    className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-red-300"
-                  >
-                    {isUnlinking ? "Memutuskan..." : "Putuskan Hubungan"}
-                  </button>
                 </div>
               </div>
             </div>
@@ -204,20 +176,6 @@ export default function OrangTuaPage() {
 
         {/* Tabs untuk konten */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="activities" className="flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              Aktivitas Siswa
-            </TabsTrigger>
-            <TabsTrigger value="comments" className="flex items-center gap-2">
-              <MessageCircle className="h-4 w-4" />
-              Komentar
-            </TabsTrigger>
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Profil Siswa
-            </TabsTrigger>
-          </TabsList>
           
           <TabsContent value="activities" className="mt-6">
             <StudentActivities studentId={data.student.userid} />
@@ -396,15 +354,6 @@ export default function OrangTuaPage() {
             <p className="text-sm text-gray-600 mt-2">
               Anda terhubung dengan siswa: <strong>{data.student.username}</strong>
             </p>
-          )}
-          {(data.relationship_status === "linked" || data.relationship_status === "broken_link") && (
-            <button
-              onClick={handleUnlink}
-              disabled={isUnlinking}
-              className="mt-4 px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-red-300"
-            >
-              {isUnlinking ? "Memutuskan..." : "Putuskan Hubungan"}
-            </button>
           )}
         </CardContent>
       </Card>

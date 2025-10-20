@@ -46,9 +46,9 @@ function roleName(id?: number | null, roles?: Role[]) {
     case 2:
       return "teacher"
     case 3:
-      return "admin"
-    case 4:
       return "parent"
+    case 4:
+      return "admin"
     case 5:
       return "student"
     case 6:
@@ -150,7 +150,7 @@ export default function UsersTable() {
 
   const fetchParents = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/user-profiles?roleid=4&pageSize=100", { cache: "no-store" })
+      const res = await fetch("/api/user-profiles?roleid=3&pageSize=100", { cache: "no-store" })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Failed to load parents")
       setParents(json.data ?? [])
@@ -457,7 +457,7 @@ export default function UsersTable() {
                 <td className="px-3 py-2 align-top">{roleBadge(roleName(r.roleid, roles))}</td>
                 <td className="px-3 py-2 align-top">{r.kelas ?? "-"}</td>
                 <td className="px-3 py-2 align-top">
-                  {r.roleid === 4 && r.parent_of_userid ? (
+                  {Number(r.roleid) === 3 && r.parent_of_userid ? (
                     // Parent watching a student
                     <div className="text-xs">
                       <div className="text-blue-600 font-medium">Parent of:</div>

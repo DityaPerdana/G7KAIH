@@ -1,3 +1,4 @@
+import { getParentRoleIds, getStudentRoleIds, isParentRole, isStudentRole } from '@/utils/lib/roles'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { NextResponse } from 'next/server'
 
@@ -13,12 +14,14 @@ export async function POST(request: Request) {
 
     const adminClient = await createAdminClient()
 
+    const parentRoleIds = getParentRoleIds()
+
     // Verify parent exists and has correct role
     const { data: parent, error: parentError } = await adminClient
       .from('user_profiles')
       .select('userid, username, roleid')
       .eq('userid', parentId)
-      .eq('roleid', 4)
+      .in('roleid', parentRoleIds.length > 0 ? parentRoleIds : [-1])
       .single()
 
     if (parentError || !parent) {
@@ -29,14 +32,16 @@ export async function POST(request: Request) {
     }
 
     // Verify student exists and has correct role
+    const studentRoleIds = getStudentRoleIds()
+
     const { data: student, error: studentError } = await adminClient
       .from('user_profiles')
       .select('userid, username, roleid')
       .eq('userid', studentId)
-      .eq('roleid', 5)
+      .in('roleid', studentRoleIds.length ? studentRoleIds : [-1])
       .single()
 
-    if (studentError || !student) {
+    if (studentError || !student || !isStudentRole(student.roleid)) {
       return NextResponse.json({ 
         error: 'Student not found or invalid role',
         debug: { studentId, studentError }
@@ -97,8 +102,8 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const parents = allUsers?.filter(user => user.roleid === 4) || []
-    const students = allUsers?.filter(user => user.roleid === 5) || []
+    const parents = allUsers?.filter(user => isParentRole(user.roleid)) || []
+    const students = allUsers?.filter(user => isStudentRole(user.roleid)) || []
     const existingRelationships = parents.filter(parent => parent.parent_of_userid)
 
     return NextResponse.json({

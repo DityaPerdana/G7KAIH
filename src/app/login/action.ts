@@ -4,6 +4,8 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
+
 export async function login(formData: FormData) {
   const supabase = await createClient()
 
@@ -25,6 +27,21 @@ export async function login(formData: FormData) {
     } else {
       throw new Error(error.message || 'Terjadi kesalahan saat login')
     }
+  }
+
+  const requestedRedirect = sanitizeRedirectPath(formData.get('origin'))
+
+  if (requestedRedirect) {
+    try {
+      await revalidatePath(requestedRedirect)
+      await revalidatePath('/', 'layout')
+    } catch (err) {
+      // Ignore revalidation errors for dynamic paths
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Revalidation skipped for path:', requestedRedirect, err)
+      }
+    }
+    redirect(requestedRedirect)
   }
 
   // Get user profile and redirect based on role

@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import React, { useEffect, useState } from 'react'
 import { login } from './action'
+import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
 
 declare global {
   interface Window {
@@ -25,6 +26,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const originParam = sanitizeRedirectPath(searchParams.get('origin')) ?? '/'
 
   useEffect(() => {
     if (document.getElementById("recaptcha-script")) return
@@ -77,6 +80,10 @@ export default function LoginPage() {
       const formData = new FormData(e.currentTarget)
       formData.append("g-recaptcha-response", token)
       
+      if (!formData.get('origin')) {
+        formData.append('origin', originParam)
+      }
+
       await login(formData)
       router.refresh()
     } catch (err: any) {
@@ -117,6 +124,7 @@ export default function LoginPage() {
       {/* Email and Password Login Form */}
       <div className="w-full max-w-sm mb-6">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="hidden" name="origin" value={originParam} />
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -191,7 +199,7 @@ export default function LoginPage() {
 
       {/* Google Sign In Button */}
       <div className="w-full max-w-sm mb-6">
-        <GoogleSignInButton />
+  <GoogleSignInButton origin={originParam} />
       </div>
 
       {/* Terms and Conditions */}

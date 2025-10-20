@@ -76,8 +76,6 @@ describe("Orang tua dashboard page", () => {
   });
 
   it("renders linked student dashboard with tabs and data", async () => {
-    const user = userEvent.setup();
-
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -101,8 +99,6 @@ describe("Orang tua dashboard page", () => {
 
     expect(studentActivitiesRender).toHaveBeenCalledWith({ studentId: "student-9" });
     expect(screen.getByTestId("student-activities").textContent).toContain("student-9");
-
-  await user.click(screen.getByRole("button", { name: /Komentar/i }));
 
     await waitFor(() => {
       expect(commentSectionRender).toHaveBeenCalledWith({
@@ -150,57 +146,30 @@ describe("Orang tua dashboard page", () => {
     expect(await screen.findByText(/Error: Server down/i)).toBeInTheDocument();
   });
 
-  it("can unlink a student and refresh data", async () => {
-    const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: {
-            ...parentData,
-            relationship_status: "linked",
-            student: {
-              userid: "student-9",
-              username: "Siswa Hebat",
-              kelas: "XI IPA 1",
-              email: "student@example.com"
-            }
+  it("hides unlink controls when a student is linked", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          ...parentData,
+          relationship_status: "linked",
+          student: {
+            userid: "student-9",
+            username: "Siswa Hebat",
+            kelas: "XI IPA 1",
+            email: "student@example.com"
           }
-        })
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true })
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: {
-            ...parentData,
-            relationship_status: "no_relationship",
-            student: null,
-            message: "Belum terhubung" 
-          }
-        })
-      } as Response);
+        }
+      })
+    } as Response);
 
     render(<OrangTuaPage />);
 
     expect(await screen.findByText(/Ananda: Siswa Hebat/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /Putuskan Hubungan/i }));
+    expect(screen.queryByRole("button", { name: /Putuskan Hubungan/i })).not.toBeInTheDocument();
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
-
-    const [, deleteOptions] = fetchMock.mock.calls[1];
-    expect(deleteOptions?.method).toBe("DELETE");
-
-    expect(await screen.findByText(/Belum Ada Siswa Terhubung/i)).toBeInTheDocument();
-
-    confirmSpy.mockRestore();
   });
 });

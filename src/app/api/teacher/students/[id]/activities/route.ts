@@ -230,15 +230,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       if (activityIdsForFlags.length > 0) {
         const { data: vrows } = await supabase
           .from('aktivitas_field_values')
-          .select('activityid, isValidateByTeacher, isValidateByParent')
+          .select('activityid, isvalidatebyteacher, isvalidatebyparent')
           .in('activityid', activityIdsForFlags)
         if (vrows) {
           for (const r of vrows as any[]) {
             const aid = r.activityid as string
             const prev = validationMap.get(aid) || { teacher: false, parent: false }
             validationMap.set(aid, {
-              teacher: prev.teacher || !!r.isValidateByTeacher,
-              parent: prev.parent || !!r.isValidateByParent,
+              teacher: prev.teacher || !!r.isvalidatebyteacher,
+              parent: prev.parent || !!r.isvalidatebyparent,
             })
           }
         }
@@ -479,14 +479,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (ids.length === 0) {
       return NextResponse.json({ error: 'activityIds is required' }, { status: 400 })
     }
-    const column = by === 'parent' ? 'isValidateByParent' : 'isValidateByTeacher'
+  const column = by === 'parent' ? 'isvalidatebyparent' : 'isvalidatebyteacher'
     const value = action === 'validate'
 
     const supabase = await createAdminClient()
     // Update all field value rows for these activities
     const { error } = await supabase
       .from('aktivitas_field_values')
-      .update({ [column]: value })
+  .update({ [column]: value })
       .in('activityid', ids)
 
     if (error) throw error

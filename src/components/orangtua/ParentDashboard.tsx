@@ -188,6 +188,10 @@ export function ParentDashboard() {
       if (validationFilter !== "all") {
         params.append("validationStatus", validationFilter)
       }
+
+      if (data.student?.userid) {
+        params.set("studentId", data.student.userid)
+      }
       
       const response = await fetch(`/api/orangtua/siswa/activities?${params}`)
       const result = await response.json()

@@ -73,8 +73,8 @@ export async function GET(
           value,
           created_at,
           updated_at,
-          isValidateByTeacher,
-          isValidateByParent,
+          isvalidatebyteacher,
+          isvalidatebyparent,
           field:fieldid (
             fieldid,
             label,
@@ -132,6 +132,8 @@ export async function GET(
 
     const activitiesWithFieldValues = (activities || []).map(activity => {
       const field_values = (activity.aktivitas_field_values || []).map((fv: any) => {
+        const teacherValidated = Boolean(fv.isvalidatebyteacher)
+        const parentValidated = Boolean(fv.isvalidatebyparent)
         // Find images for this specific field value
         const fieldImages = images.filter(img => 
           img.activityid === activity.activityid && img.fieldid === fv.fieldid
@@ -145,15 +147,15 @@ export async function GET(
             url: file.cloudinary_url
           })),
           validation: {
-            status: fv.isValidateByTeacher && fv.isValidateByParent
+            status: teacherValidated && parentValidated
               ? 'fully_validated'
-              : fv.isValidateByTeacher
+              : teacherValidated
               ? 'teacher_validated'
-              : fv.isValidateByParent
+              : parentValidated
               ? 'parent_validated'
               : 'pending',
-            byTeacher: fv.isValidateByTeacher || false,
-            byParent: fv.isValidateByParent || false
+            byTeacher: teacherValidated,
+            byParent: parentValidated
           }
         }
       })

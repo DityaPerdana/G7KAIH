@@ -395,6 +395,10 @@ export function StudentActivities({ studentId }: StudentActivitiesProps) {
         ...(kegiatanFilter && { kegiatanId: kegiatanFilter })
       })
 
+      if (studentId) {
+        params.set('studentId', studentId)
+      }
+
       console.log('Fetching activities with params:', params.toString())
       
       const response = await fetch(`/api/orangtua/siswa/activities?${params}`)

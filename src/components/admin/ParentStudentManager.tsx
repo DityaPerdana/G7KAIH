@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectEmpty, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select-improved"
+import { isParentRole } from "@/utils/lib/roles"
 import { Link, Unlink, Users } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -46,7 +47,7 @@ export function ParentStudentManager() {
       const users = result.data || []
       
       // Separate parents and students
-      const parentUsers = users.filter((u: User) => u.roleid === 4)
+  const parentUsers = users.filter((u: User) => isParentRole(u.roleid))
       const studentUsers = users.filter((u: User) => u.roleid === 5)
       
       setParents(parentUsers)

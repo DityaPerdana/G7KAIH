@@ -25,25 +25,100 @@ type NormalizedField = {
 const allowedFieldTypes = new Set(["text", "time", "image", "text_image", "multiselect"])
 
 function sanitizeFieldType(value: any): string {
-  const next = typeof value === "string" ? value.trim().toLowerCase() : ""
-  return allowedFieldTypes.has(next) ? next : "text"
+  if (typeof value !== "string") return "text"
+  const trimmed = value.trim().toLowerCase()
+  const canonical = trimmed.replace(/\s+/g, "_").replace(/-/g, "_")
+  switch (canonical) {
+    case "text_gambar":
+    case "gambar_dengan_teks":
+      return "text_image"
+    case "pilihan":
+    case "multi_select":
+    case "multi-select":
+      return "multiselect"
+    case "jam":
+      return "time"
+    default:
+      return allowedFieldTypes.has(canonical) ? canonical : "text"
+  }
+}
+
+async function fetchCategoryFields(
+  client: Awaited<ReturnType<typeof createClient>> | Awaited<ReturnType<typeof createAdminClient>>,
+  categoryIds: string[]
+): Promise<Map<string, NormalizedField[]>> {
+  const result = new Map<string, NormalizedField[]>()
+  if (!categoryIds.length) return result
+
+  const { data: fields, error } = await (client as any)
+    .from("category_fields")
+    .select("categoryid, field_key, label, type, required, order_index, config")
+    .in("categoryid", categoryIds)
+
+  if (error && error.code !== "PGRST116" && error.code !== "42501") {
+    throw error
+  }
+
+  const rows = (!error || error.code === "PGRST116" || error.code === "42501") ? fields || [] : []
+  for (const row of rows) {
+    const categoryid = typeof row?.categoryid === "string" ? row.categoryid : null
+    if (!categoryid) continue
+    const list = result.get(categoryid) || []
+    let config: any = row?.config
+    if (config && typeof config === "string") {
+      try {
+        config = JSON.parse(config)
+      } catch {
+        config = undefined
+      }
+    }
+    if (!(config && typeof config === "object" && !Array.isArray(config))) {
+      config = undefined
+    }
+    list.push({
+      key: row?.field_key,
+      label: typeof row?.label === "string" ? row.label : "",
+      type: sanitizeFieldType(row?.type),
+      required: !!row?.required,
+      order: typeof row?.order_index === "number" ? row.order_index : 0,
+      config,
+    })
+    result.set(categoryid, list)
+  }
+
+  for (const [key, list] of result) {
+    list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  }
+
+  return result
 }
 
 function normalizeInputs(raw: any): NormalizedField[] {
+  const candidate = (() => {
+    if (raw && typeof raw === "object") {
+      const nested = (raw as any).inputs ?? (raw as any).fields ?? (raw as any).field_schema ?? (raw as any).schema ?? (raw as any).form ?? null
+      if (nested != null) return nested
+    }
+    return raw
+  })()
   const asArray = (() => {
-    if (Array.isArray(raw)) return raw
-    if (typeof raw === "string") {
+    const value = candidate ?? raw
+    if (Array.isArray(value)) return value
+    if (value && typeof value === "object" && (typeof value.key === "string" || typeof value.field_key === "string")) {
+      return [value]
+    }
+    if (typeof value === "string") {
       try {
-        const parsed = JSON.parse(raw)
+        const parsed = JSON.parse(value)
         if (Array.isArray(parsed)) return parsed
         if (parsed && typeof parsed === "object") return Object.values(parsed)
       } catch {
         return []
       }
     }
-    if (raw && typeof raw === "object") {
-      if (Array.isArray((raw as any).data)) return (raw as any).data
-      const values = Object.values(raw)
+    if (value && typeof value === "object") {
+      if (Array.isArray((value as any).data)) return (value as any).data
+      const values = Object.values(value)
       if (values.every((item) => item && typeof item === "object")) return values
     }
     return []
@@ -52,20 +127,44 @@ function normalizeInputs(raw: any): NormalizedField[] {
   const normalized: NormalizedField[] = []
 
   asArray.forEach((item: any, index: number) => {
-    const key = typeof item?.key === "string" ? item.key : null
+    const key =
+      typeof item?.key === "string"
+        ? item.key
+        : typeof item?.field_key === "string"
+        ? item.field_key
+        : typeof item?.name === "string"
+        ? item.name
+        : null
     if (!key) return
-    const label = typeof item?.label === "string" ? item.label : ""
-    const type = sanitizeFieldType(item?.type)
+    const label =
+      typeof item?.label === "string"
+        ? item.label
+        : typeof item?.field_label === "string"
+        ? item.field_label
+        : typeof item?.name === "string"
+        ? item.name
+        : ""
+    const typeSource =
+      item?.type ?? item?.field_type ?? (typeof item?.input_type === "string" ? item.input_type : undefined)
+    let config: any = item?.config ?? item?.field_config ?? item?.settings
+    if (typeof config === "string") {
+      try {
+        config = JSON.parse(config)
+      } catch {
+        config = undefined
+      }
+    }
+    if (!(config && typeof config === "object" && !Array.isArray(config))) {
+      config = undefined
+    }
+    const orderSource = item?.order ?? item?.order_index ?? item?.position ?? item?.sort_order ?? index
     normalized.push({
       key,
       label,
-      type,
-      required: !!item?.required,
-      order: Number.isFinite(item?.order) ? Number(item.order) : index,
-      config:
-        item?.config && typeof item.config === "object"
-          ? (item.config as Record<string, any>)
-          : undefined,
+      type: sanitizeFieldType(typeSource),
+      required: !!(item?.required ?? item?.is_required ?? item?.mandatory),
+      order: Number.isFinite(orderSource) ? Number(orderSource) : index,
+      config,
     })
   })
 
@@ -151,13 +250,24 @@ export async function GET(
       if (rpcErr && rpcErr.code !== "PGRST116") throw rpcErr
 
       if (Array.isArray(rpcCategories) && rpcCategories.length) {
-        categories = rpcCategories
+        const mapped = rpcCategories
           .filter((row: any) => typeof row?.categoryid === "string")
           .map((row: any) => ({
             categoryid: row.categoryid,
             categoryname: typeof row?.categoryname === "string" ? row.categoryname : "",
-            inputs: normalizeInputs(row?.inputs),
+            inputs: normalizeInputs(row?.inputs ?? row?.fields ?? row?.field_schema ?? row?.schema ?? row),
           }))
+
+        const needsFieldFetch = mapped.filter((cat) => !(Array.isArray(cat.inputs) && cat.inputs.length))
+        if (needsFieldFetch.length) {
+          const fieldMap = await fetchCategoryFields(categoryClient, needsFieldFetch.map((c) => c.categoryid))
+          categories = mapped.map((cat) => ({
+            ...cat,
+            inputs: fieldMap.get(cat.categoryid) ?? cat.inputs ?? [],
+          }))
+        } else {
+          categories = mapped
+        }
       }
     }
 
@@ -179,7 +289,7 @@ export async function GET(
         })
         .filter((id: string | null): id is string => typeof id === "string" && id.length > 0)
 
-      const uniqueCatIds = Array.from(new Set(orderedCatIds))
+      const uniqueCatIds: string[] = Array.from(new Set<string>(orderedCatIds))
 
       if (uniqueCatIds.length) {
         const { data: catRows, error: catErr } = await categoryClient
@@ -212,25 +322,10 @@ export async function GET(
           .in("categoryid", uniqueCatIds)
         if (fldErr && fldErr.code !== "PGRST116" && fldErr.code !== "42501") throw fldErr
 
-        const fieldRows = (!fldErr || fldErr.code === "PGRST116" || fldErr.code === "42501") ? fields || [] : []
-
-        const byCat = new Map<string, any[]>()
-        for (const f of fieldRows) {
-          const arr = byCat.get(f.categoryid) || []
-          arr.push({
-            key: f.field_key,
-            label: typeof f.label === "string" ? f.label : "",
-            type: sanitizeFieldType(f.type),
-            required: !!f.required,
-            order: typeof f.order_index === "number" ? f.order_index : 0,
-            config: f.config && typeof f.config === "object" ? f.config : undefined,
-          })
-          byCat.set(f.categoryid, arr)
-        }
-
+        const fieldMap = await fetchCategoryFields(categoryClient, uniqueCatIds)
         categories = categories.map((c) => ({
           ...c,
-          inputs: (byCat.get(c.categoryid) || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+          inputs: fieldMap.get(c.categoryid) ?? [],
         }))
       }
     }

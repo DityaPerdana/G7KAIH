@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -32,16 +34,30 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
+  const isApiRoute = pathname.startsWith('/api')
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/auth/callback', '/auth/confirm', '/error', '/auth/auth-code-error', '/tos']
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
 
   // Redirect unauthenticated users to login
-  if (!user && !isPublicRoute && pathname !== '/') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+  if (!user) {
+    if (isApiRoute) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!isPublicRoute && pathname !== '/') {
+      const originPath = sanitizeRedirectPath(
+        `${request.nextUrl.pathname}${request.nextUrl.search}${request.nextUrl.hash ?? ''}`
+      )
+      const loginUrl = request.nextUrl.clone()
+      loginUrl.pathname = '/login'
+      loginUrl.search = ''
+      if (originPath && originPath !== '/login') {
+        loginUrl.searchParams.set('origin', originPath)
+      }
+      return NextResponse.redirect(loginUrl, 302)
+    }
   }
 
   // Auth guard for authenticated users
@@ -49,7 +65,7 @@ export async function middleware(request: NextRequest) {
     // Get user profile and role
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('userid, username, roleid')
+      .select('userid, username, roleid, is_guruwali')
       .eq('userid', user.id)
       .single()
 
@@ -61,115 +77,124 @@ export async function middleware(request: NextRequest) {
         .eq('roleid', profile.roleid)
         .single()
 
-      const roleName = roleData?.rolename
+  const roleName = roleData?.rolename
+  const normalizedRoleName = roleName?.toLowerCase()
+  const roleKey = normalizedRoleName ?? roleName ?? ''
+  const hasGuruWaliFlag = profile.is_guruwali === true || profile.roleid === 6 || roleKey === 'guruwali'
 
       // Route protection based on role
-  if (pathname.startsWith('/dashboard') && roleName !== 'admin' && roleName !== 'teacher') {
+      if (pathname.startsWith('/dashboard') && roleKey !== 'admin' && roleKey !== 'teacher') {
         // Redirect to appropriate role page instead of unknown
-        switch (roleName) {
+        switch (roleKey) {
           case 'teacher':
-            return NextResponse.redirect(new URL('/guru', request.url))
+            return NextResponse.redirect(new URL('/guru', request.url), 302)
           case 'guruwali':
-            return NextResponse.redirect(new URL('/guruwali', request.url))
+            return NextResponse.redirect(new URL('/guruwali', request.url), 302)
           case 'student':
-            return NextResponse.redirect(new URL('/siswa', request.url))
+            return NextResponse.redirect(new URL('/siswa', request.url), 302)
           case 'parent':
-            return NextResponse.redirect(new URL('/orangtua', request.url))
+            return NextResponse.redirect(new URL('/orangtua', request.url), 302)
           default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+            return NextResponse.redirect(new URL('/unknown', request.url), 302)
         }
       }
       
-  if (pathname.startsWith('/siswa') && roleName !== 'student') {
+      if (pathname.startsWith('/siswa') && roleKey !== 'student') {
         // Redirect to appropriate role page instead of unknown
-        switch (roleName) {
+        switch (roleKey) {
           case 'admin':
-            return NextResponse.redirect(new URL('/dashboard', request.url))
+            return NextResponse.redirect(new URL('/dashboard', request.url), 302)
           case 'teacher':
-            return NextResponse.redirect(new URL('/guru', request.url))
+            return NextResponse.redirect(new URL('/guru', request.url), 302)
           case 'guruwali':
-            return NextResponse.redirect(new URL('/guruwali', request.url))
+            return NextResponse.redirect(new URL('/guruwali', request.url), 302)
           case 'parent':
-            return NextResponse.redirect(new URL('/orangtua', request.url))
+            return NextResponse.redirect(new URL('/orangtua', request.url), 302)
           default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+            return NextResponse.redirect(new URL('/unknown', request.url), 302)
         }
       }
       
-      if (pathname.startsWith('/guru') && roleName !== 'teacher' && roleName !== 'guruwali') {
+      const isTeacher = roleKey === 'teacher'
+      const isGuruWali = roleKey === 'guruwali' || hasGuruWaliFlag
+
+      if (pathname.startsWith('/guru') && !isTeacher && !isGuruWali) {
         // Redirect to appropriate role page instead of unknown
-        switch (roleName) {
+        switch (roleKey) {
           case 'admin':
-            return NextResponse.redirect(new URL('/dashboard', request.url))
+            return NextResponse.redirect(new URL('/dashboard', request.url), 302)
           case 'student':
-            return NextResponse.redirect(new URL('/siswa', request.url))
+            return NextResponse.redirect(new URL('/siswa', request.url), 302)
           case 'parent':
-            return NextResponse.redirect(new URL('/orangtua', request.url))
+            return NextResponse.redirect(new URL('/orangtua', request.url), 302)
           default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+            return NextResponse.redirect(new URL('/unknown', request.url), 302)
         }
       }
 
-      if (pathname.startsWith('/guruwali') && roleName !== 'guruwali') {
+      if (pathname.startsWith('/guruwali') && !isGuruWali) {
         // Redirect to appropriate role page instead of unknown
-        switch (roleName) {
+        switch (roleKey) {
           case 'admin':
-            return NextResponse.redirect(new URL('/dashboard', request.url))
+            return NextResponse.redirect(new URL('/dashboard', request.url), 302)
           case 'teacher':
-            return NextResponse.redirect(new URL('/guru', request.url))
+            return NextResponse.redirect(new URL('/guru', request.url), 302)
           case 'student':
-            return NextResponse.redirect(new URL('/siswa', request.url))
+            return NextResponse.redirect(new URL('/siswa', request.url), 302)
           case 'parent':
-            return NextResponse.redirect(new URL('/orangtua', request.url))
+            return NextResponse.redirect(new URL('/orangtua', request.url), 302)
           default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+            return NextResponse.redirect(new URL('/unknown', request.url), 302)
         }
       }
       
-      if (pathname.startsWith('/orangtua') && roleName !== 'parent') {
+      if (pathname.startsWith('/orangtua') && roleKey !== 'parent') {
         // Redirect to appropriate role page instead of unknown
-        switch (roleName) {
+        switch (roleKey) {
           case 'admin':
-            return NextResponse.redirect(new URL('/dashboard', request.url))
+            return NextResponse.redirect(new URL('/dashboard', request.url), 302)
           case 'teacher':
-            return NextResponse.redirect(new URL('/guru', request.url))
+            return NextResponse.redirect(new URL('/guru', request.url), 302)
           case 'guruwali':
-            return NextResponse.redirect(new URL('/guruwali', request.url))
+            return NextResponse.redirect(new URL('/guruwali', request.url), 302)
           case 'student':
-            return NextResponse.redirect(new URL('/siswa', request.url))
+            return NextResponse.redirect(new URL('/siswa', request.url), 302)
           default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+            return NextResponse.redirect(new URL('/unknown', request.url), 302)
         }
       }
 
       // Users with role 'unknown' can only access /unknown
-      if (roleName === 'unknown' && pathname !== '/unknown') {
-        return NextResponse.redirect(new URL('/unknown', request.url))
+      if (roleKey === 'unknown' && pathname !== '/unknown') {
+        return NextResponse.redirect(new URL('/unknown', request.url), 302)
       }
 
       // Redirect root path based on role
       if (pathname === '/') {
-        switch (roleName) {
-          case 'admin':
-            return NextResponse.redirect(new URL('/dashboard', request.url))
-          case 'student':
-            return NextResponse.redirect(new URL('/siswa', request.url))
-          case 'teacher':
-            return NextResponse.redirect(new URL('/guru', request.url))
-          case 'guruwali':
-            return NextResponse.redirect(new URL('/guruwali', request.url))
-          case 'parent':
-            return NextResponse.redirect(new URL('/orangtua', request.url))
-          case 'unknown':
-            return NextResponse.redirect(new URL('/unknown', request.url))
-          default:
-            return NextResponse.redirect(new URL('/unknown', request.url))
+        if (roleKey === 'admin') {
+          return NextResponse.redirect(new URL('/dashboard', request.url), 302)
         }
+        if (roleKey === 'student') {
+          return NextResponse.redirect(new URL('/siswa', request.url), 302)
+        }
+        if (isGuruWali) {
+          return NextResponse.redirect(new URL('/guruwali', request.url), 302)
+        }
+        if (roleKey === 'teacher') {
+          return NextResponse.redirect(new URL('/guru', request.url), 302)
+        }
+        if (roleKey === 'parent') {
+          return NextResponse.redirect(new URL('/orangtua', request.url), 302)
+        }
+        if (roleKey === 'unknown') {
+          return NextResponse.redirect(new URL('/unknown', request.url), 302)
+        }
+        return NextResponse.redirect(new URL('/unknown', request.url), 302)
       }
     } else {
       // No profile found, redirect to unknown
       if (pathname !== '/unknown') {
-        return NextResponse.redirect(new URL('/unknown', request.url))
+        return NextResponse.redirect(new URL('/unknown', request.url), 302)
       }
     }
   }

@@ -63,32 +63,39 @@ export function TeacherSidebar({
   const basePath = pathname.startsWith('/guruwali') ? '/guruwali' : '/guru'
   const isGuruWali = pathname.startsWith('/guruwali')
   
-  const navigationItems = [
-    {
-      key: "students",
-      title: "Siswa",
-      url: `${basePath}/siswa`,
-      icon: Users,
-      description: isGuruWali ? "Kelola siswa wali kelas" : "Daftar semua siswa",
-      color: "bg-blue-500"
-    },
-    {
-      key: "wali-kelas",
-      title: "Guru Wali",
-      url: `${basePath}/wali-kelas`,
-      icon: UserCheck,
-      description: "Manajemen wali kelas",
-      color: "bg-green-500"
-    },
-    {
-      key: "reports",
-      title: "Laporan",
-      url: `${basePath}/laporan`,
-      icon: FileText,
-      description: "Lihat laporan aktivitas",
-      color: "bg-orange-500"
+  const navigationItems = React.useMemo(() => {
+    const baseItems = [
+      {
+        key: "students",
+        title: "Siswa",
+        url: `${basePath}/siswa`,
+        icon: Users,
+        description: isGuruWali ? "Kelola siswa wali kelas" : "Daftar semua siswa",
+        color: "bg-blue-500"
+      },
+      {
+        key: "reports",
+        title: "Laporan",
+        url: `${basePath}/laporan`,
+        icon: FileText,
+        description: "Lihat laporan aktivitas",
+        color: "bg-orange-500"
+      }
+    ]
+
+    if (!isGuruWali) {
+      baseItems.splice(1, 0, {
+        key: "wali-kelas",
+        title: "Guru Wali",
+        url: `${basePath}/wali-kelas`,
+        icon: UserCheck,
+        description: "Manajemen wali kelas",
+        color: "bg-green-500"
+      })
     }
-  ]
+
+    return baseItems
+  }, [basePath, isGuruWali])
 
   const getRoleName = (roleId: number | null) => {
     switch (roleId) {

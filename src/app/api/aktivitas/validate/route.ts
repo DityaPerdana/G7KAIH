@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
     // Prepare update data based on user role
     const updateData: any = {}
     if (role.rolename === 'teacher' && validated_by_teacher !== undefined) {
-      updateData.isValidateByTeacher = validated_by_teacher
+      updateData.isvalidatebyteacher = validated_by_teacher
     } else if (role.rolename === 'parent' && validated_by_parent !== undefined) {
-      updateData.isValidateByParent = validated_by_parent
+      updateData.isvalidatebyparent = validated_by_parent
     } else {
       return NextResponse.json({ error: 'Invalid validation request' }, { status: 400 })
     }

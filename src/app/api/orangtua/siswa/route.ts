@@ -1,3 +1,4 @@
+import { isAdminRole, isParentRole, getParentRoleIds, getStudentRoleIds, isStudentRole } from "@/utils/lib/roles"
 import { createAdminClient } from "@/utils/supabase/admin"
 import { createClient } from "@/utils/supabase/server"
 import { NextResponse } from "next/server"
@@ -30,13 +31,15 @@ export async function GET() {
       }, { status: 404 })
     }
 
-    // Verify user is a parent
-    if (parentProfile.roleid !== 4) {
+    const actingAsParent = isParentRole(parentProfile.roleid)
+    const actingAsAdmin = isAdminRole(parentProfile.roleid)
+
+    if (!actingAsParent && !actingAsAdmin) {
       return NextResponse.json({ 
         error: "Access denied: Only parents can access this endpoint", 
         debug: { 
           currentRole: parentProfile.roleid,
-          expectedRole: 4,
+          expectedRole: getParentRoleIds(),
           username: parentProfile.username
         }
       }, { status: 403 })
@@ -54,17 +57,24 @@ export async function GET() {
       relationship_status: "no_relationship"
     }
 
+    const studentRoleIds = getStudentRoleIds()
+
     // If parent has a linked student
-    if (parentProfile.parent_of_userid) {
+    if (actingAsParent && parentProfile.parent_of_userid) {
       const { data: studentProfile, error: studentError } = await adminClient
         .from("user_profiles")
-        .select("userid, username, email, kelas")
+        .select("userid, username, email, kelas, roleid")
         .eq("userid", parentProfile.parent_of_userid)
-        .eq("roleid", 5) // Must be a student
+        .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
         .maybeSingle()
 
-      if (studentProfile) {
-        result.student = studentProfile
+      if (studentProfile && isStudentRole(studentProfile.roleid)) {
+        result.student = {
+          userid: studentProfile.userid,
+          username: studentProfile.username,
+          email: studentProfile.email,
+          kelas: studentProfile.kelas
+        }
         result.relationship_status = "linked"
       } else {
         result.relationship_status = "broken_link"
@@ -75,8 +85,8 @@ export async function GET() {
     if (result.relationship_status !== "linked") {
       const { data: availableStudents, error: studentsError } = await adminClient
         .from("user_profiles")
-        .select("userid, username, email, kelas")
-        .eq("roleid", 5) // Students
+        .select("userid, username, email, kelas, roleid")
+        .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
         .is("parent_of_userid", null) // Not already linked
         .order("username", { ascending: true })
 
@@ -84,10 +94,19 @@ export async function GET() {
         return NextResponse.json({ 
           data: {
             ...result,
-            available_students: availableStudents,
-            message: result.relationship_status === "broken_link" 
+            available_students: availableStudents
+              .filter((student) => isStudentRole(student.roleid))
+              .map((student) => ({
+                userid: student.userid,
+                username: student.username,
+                email: student.email,
+                kelas: student.kelas
+              })),
+            message: result.relationship_status === "broken_link"
               ? "Student link is broken. Please select a new student."
-              : "No student linked. Please select a student to monitor."
+              : actingAsParent
+                ? "No student linked. Please select a student to monitor."
+                : "Anda melihat data sebagai admin. Pilih siswa untuk memeriksa keterhubungan."
           }
         })
       }
@@ -128,25 +147,27 @@ export async function POST(request: Request) {
       .from("user_profiles")
       .select("userid, username, roleid")
       .eq("userid", user.id)
-      .eq("roleid", 4)
+      .in("roleid", getParentRoleIds())
       .single()
 
-    if (parentError || !parentProfile) {
+    if (parentError || !parentProfile || !isParentRole(parentProfile.roleid)) {
       return NextResponse.json({ 
         error: "Only parents can link to students",
         debug: { userId: user.id, parentError }
       }, { status: 403 })
     }
 
+    const studentRoleIds = getStudentRoleIds()
+
     // Verify student exists and has correct role
     const { data: studentProfile, error: studentError } = await adminClient
       .from("user_profiles")
       .select("userid, username, roleid")
       .eq("userid", student_userid)
-      .eq("roleid", 5) // Must be a student
+      .in("roleid", studentRoleIds.length ? studentRoleIds : [-1])
       .single()
 
-    if (studentError || !studentProfile) {
+    if (studentError || !studentProfile || !isStudentRole(studentProfile.roleid)) {
       return NextResponse.json({ 
         error: "Student not found or invalid",
         debug: { student_userid, studentError }
@@ -157,8 +178,8 @@ export async function POST(request: Request) {
     const { data: existingParent, error: existingError } = await adminClient
       .from("user_profiles")
       .select("userid, username")
-      .eq("parent_of_userid", student_userid)
-      .eq("roleid", 4)
+  .eq("parent_of_userid", student_userid)
+  .in("roleid", getParentRoleIds())
       .maybeSingle()
 
     if (!existingError && existingParent && existingParent.userid !== user.id) {
@@ -226,10 +247,10 @@ export async function DELETE() {
       .from("user_profiles")
       .select("userid, username, roleid, parent_of_userid")
       .eq("userid", user.id)
-      .eq("roleid", 4)
+      .in("roleid", getParentRoleIds())
       .single()
 
-    if (parentError || !parentProfile) {
+    if (parentError || !parentProfile || !isParentRole(parentProfile.roleid)) {
       return NextResponse.json({ 
         error: "Only parents can unlink from students",
         debug: { userId: user.id, parentError }
