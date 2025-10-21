@@ -7,7 +7,12 @@ const { __setMockParams, __getMockRouter, __resetMockRouter } = navigation;
 
 const { default: SiswaKegiatanDetail } = await import("../page");
 
-type FetchResponse = { ok: boolean; status?: number; json: () => Promise<any> };
+type FetchResponse = {
+  ok: boolean
+  status?: number
+  jsonData?: any
+  textData?: string
+}
 
 const originalFetch = global.fetch;
 const originalFormData = global.FormData;
@@ -63,7 +68,26 @@ describe("Siswa kegiatan detail page", () => {
       if (!next) {
         throw new Error("Unexpected fetch call");
       }
-      return Promise.resolve(next);
+      return Promise.resolve({
+        ok: next.ok,
+        status: next.status ?? 200,
+        json: async () => {
+          if (next.jsonData !== undefined) return next.jsonData
+          if (next.textData !== undefined) {
+            try {
+              return JSON.parse(next.textData)
+            } catch {
+              return next.textData
+            }
+          }
+          return undefined
+        },
+        text: async () => {
+          if (next.textData !== undefined) return next.textData
+          if (next.jsonData !== undefined) return JSON.stringify(next.jsonData)
+          return ""
+        },
+      })
     });
   };
 
@@ -73,7 +97,7 @@ describe("Siswa kegiatan detail page", () => {
     queueResponses(
       {
         ok: true,
-        json: async () => ({
+        jsonData: {
           data: {
             kegiatanname: "Kegiatan Pagi",
             submissionStatus: { canSubmit: true, lastSubmittedAt: null },
@@ -93,11 +117,11 @@ describe("Siswa kegiatan detail page", () => {
               }
             ]
           }
-        })
+        }
       },
       {
         ok: true,
-        json: async () => ({ message: "ok" })
+        textData: JSON.stringify({ message: "ok" })
       }
     );
 
@@ -141,7 +165,7 @@ describe("Siswa kegiatan detail page", () => {
   it("shows validation error when required field is missing", async () => {
     queueResponses({
       ok: true,
-      json: async () => ({
+      jsonData: {
         data: {
           kegiatanname: "Latihan Siang",
           submissionStatus: { canSubmit: true, lastSubmittedAt: null },
@@ -153,7 +177,7 @@ describe("Siswa kegiatan detail page", () => {
             }
           ]
         }
-      })
+      }
     });
 
     render(<SiswaKegiatanDetail />);
@@ -174,7 +198,7 @@ describe("Siswa kegiatan detail page", () => {
   it("disables inputs and submit when submission already locked", async () => {
     queueResponses({
       ok: true,
-      json: async () => ({
+      jsonData: {
         data: {
           kegiatanname: "Latihan Malam",
           submissionStatus: { canSubmit: false, lastSubmittedAt: "2024-02-02T10:00:00Z" },
@@ -186,7 +210,7 @@ describe("Siswa kegiatan detail page", () => {
             }
           ]
         }
-      })
+      }
     });
 
     render(<SiswaKegiatanDetail />);
@@ -200,8 +224,8 @@ describe("Siswa kegiatan detail page", () => {
     queueResponses({
       ok: false,
       status: 500,
-      json: async () => ({ error: "Server error" })
-    });
+      textData: JSON.stringify({ error: "Server error" })
+    })
 
     render(<SiswaKegiatanDetail />);
 

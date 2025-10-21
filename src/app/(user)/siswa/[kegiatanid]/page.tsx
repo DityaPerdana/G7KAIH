@@ -36,7 +36,6 @@ type KegiatanDetail = {
 }
 
 const ALLOWED_FIELD_TYPES: Field["type"][] = ["text", "time", "image", "text_image", "multiselect"]
-
 function normalizeFieldType(value: any): Field["type"] {
   const next = typeof value === "string" ? value.trim().toLowerCase() : ""
   return (ALLOWED_FIELD_TYPES as string[]).includes(next) ? (next as Field["type"]) : "text"
@@ -109,6 +108,15 @@ function resolveOptions(field: Field): string[] {
   return []
 }
 
+const MAX_IMAGE_SIZE_BYTES = 3 * 1024 * 1024
+const MAX_IMAGE_SIZE_MB = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+const MAX_IMAGE_SIZE_LABEL = MAX_IMAGE_SIZE_MB % 1 === 0 ? `${MAX_IMAGE_SIZE_MB.toFixed(0)}MB` : `${MAX_IMAGE_SIZE_MB.toFixed(1)}MB`
+
+function formatSizeMb(bytes: number) {
+  const sizeMb = bytes / (1024 * 1024)
+  return sizeMb % 1 === 0 ? `${sizeMb.toFixed(0)}MB` : `${sizeMb.toFixed(1)}MB`
+}
+
 export default function SiswaKegiatanDetail() {
   const params = useParams<{ kegiatanid: string | string[] }>()
   const router = useRouter()
@@ -123,6 +131,7 @@ export default function SiswaKegiatanDetail() {
   const [submitting, setSubmitting] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = React.useState<string | null>(null)
+  const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({})
   const locked = data?.submissionStatus?.canSubmit === false
   const lastSubmitted = data?.submissionStatus?.lastSubmittedAt
     ? new Date(data.submissionStatus.lastSubmittedAt).toLocaleString("id-ID")
@@ -160,6 +169,7 @@ export default function SiswaKegiatanDetail() {
           const seed: Record<string, Record<string, any>> = {}
           for (const c of normalizedCategories) seed[c.categoryid] = {}
           setValues(seed)
+          setFileErrors({})
         }
       } catch (e: any) {
         if (active) setError(e?.message || "Terjadi kesalahan")
@@ -172,6 +182,8 @@ export default function SiswaKegiatanDetail() {
     }
   }, [kegiatanid])
 
+  const fieldKey = (categoryid: string, key: string) => `${categoryid}-${key}`
+
   const setFieldValue = (categoryid: string, key: string, val: any) => {
     if (locked) return
     setValues((prev) => ({
@@ -181,6 +193,15 @@ export default function SiswaKegiatanDetail() {
         [key]: val,
       },
     }))
+  }
+
+  const updateFileError = (fullKey: string, message: string | null) => {
+    setFileErrors((prev) => {
+      const next = { ...prev }
+      if (message) next[fullKey] = message
+      else delete next[fullKey]
+      return next
+    })
   }
 
   const validateRequired = (): string | null => {
@@ -216,6 +237,12 @@ export default function SiswaKegiatanDetail() {
       return
     }
 
+    const activeFileError = Object.values(fileErrors).find(Boolean)
+    if (activeFileError) {
+      setSubmitError(activeFileError)
+      return
+    }
+
     try {
       setSubmitting(true)
       // Build multipart form-data to carry files + values JSON
@@ -245,10 +272,17 @@ export default function SiswaKegiatanDetail() {
         for (const f of c.inputs || []) {
           const cur = values?.[c.categoryid]?.[f.key]
           if (f.type === "image" && cur instanceof File) {
+            if (cur.size > MAX_IMAGE_SIZE_BYTES) {
+              throw new Error(`File ${cur.name} lebih besar dari batas ${MAX_IMAGE_SIZE_LABEL}.`)
+            }
             fd.append(`file:${c.categoryid}:${f.key}`, cur, cur.name)
           }
           if (f.type === "text_image" && cur && typeof cur === "object" && cur.image instanceof File) {
-            fd.append(`file:${c.categoryid}:${f.key}`, cur.image as File, (cur.image as File).name)
+            const imageFile = cur.image as File
+            if (imageFile.size > MAX_IMAGE_SIZE_BYTES) {
+              throw new Error(`File ${imageFile.name} lebih besar dari batas ${MAX_IMAGE_SIZE_LABEL}.`)
+            }
+            fd.append(`file:${c.categoryid}:${f.key}`, imageFile, imageFile.name)
           }
         }
       }
@@ -257,7 +291,23 @@ export default function SiswaKegiatanDetail() {
         method: "POST",
         body: fd,
       })
-      const json = await res.json()
+
+      let rawText = ""
+      try {
+        rawText = await res.text()
+      } catch {
+        rawText = ""
+      }
+
+      let json: any = null
+      if (rawText) {
+        try {
+          json = JSON.parse(rawText)
+        } catch {
+          json = null
+        }
+      }
+
       if (res.status === 409) {
         setSubmitError(json?.error || "Kamu sudah mengirim aktivitas hari ini. Coba lagi besok.")
         setData((prev) =>
@@ -273,20 +323,45 @@ export default function SiswaKegiatanDetail() {
         )
         return
       }
-      if (!res.ok) throw new Error(json?.error || "Gagal menyimpan aktivitas")
+
+      if (res.status === 413) {
+        const message = (json?.error && String(json.error)) || `Ukuran file maksimal ${MAX_IMAGE_SIZE_LABEL} per gambar.`
+        setSubmitError(message)
+        return
+      }
+
+      if (!res.ok) {
+        const trimmed = rawText.trim()
+        const fallbackMessage = json?.error
+          ? String(json.error)
+          : trimmed
+            ? trimmed.startsWith("<")
+              ? "Terjadi kesalahan pada server. Coba lagi nanti."
+              : trimmed
+            : "Gagal menyimpan aktivitas"
+        throw new Error(fallbackMessage)
+      }
+
       setSubmitSuccess("Aktivitas berhasil dikirim.")
+  setFileErrors({})
       setTimeout(() => router.push("/siswa"), 900)
     } catch (e: any) {
-      setSubmitError(e?.message || "Terjadi kesalahan saat mengirim")
+      const message = e?.message || "Terjadi kesalahan saat mengirim"
+      if (typeof message === "string" && message.includes("413")) {
+        setSubmitError(`Ukuran file maksimal ${MAX_IMAGE_SIZE_LABEL} per gambar.`)
+      } else {
+        setSubmitError(message)
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const renderField = (c: Category, f: Field) => {
-    const fieldId = `${c.categoryid}-${f.key}`
+    const fieldId = fieldKey(c.categoryid, f.key)
     const v = values?.[c.categoryid]?.[f.key]
     const disabled = locked || submitting
+    const fileError = fileErrors[fieldId]
 
     const inputClass = "h-11 rounded-lg border-emerald-100 bg-white/80 text-sm focus-visible:border-emerald-400 focus-visible:ring-emerald-200 disabled:bg-slate-100 disabled:text-slate-500"
 
@@ -359,15 +434,37 @@ export default function SiswaKegiatanDetail() {
       }
       case "image":
         return (
-          <div className="rounded-xl border border-dashed border-emerald-100 bg-white/70 p-3">
+          <div className="rounded-xl border border-dashed border-emerald-100 bg-white/70 p-3 space-y-2">
             <input
               id={fieldId}
               type="file"
               accept={f?.config?.accept || "image/*"}
               className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100/80 file:px-4 file:py-2 file:font-medium file:text-emerald-700 hover:file:bg-emerald-100"
               disabled={disabled}
-              onChange={(e) => setFieldValue(c.categoryid, f.key, e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null
+                if (!file) {
+                  updateFileError(fieldId, null)
+                  setFieldValue(c.categoryid, f.key, null)
+                  return
+                }
+
+                if (file.size > MAX_IMAGE_SIZE_BYTES) {
+                  const message = `Ukuran file ${file.name} (${formatSizeMb(file.size)}) melebihi batas ${MAX_IMAGE_SIZE_LABEL}.`
+                  updateFileError(fieldId, message)
+                  setSubmitError(message)
+                  setFieldValue(c.categoryid, f.key, null)
+                  e.target.value = ""
+                  return
+                }
+
+                updateFileError(fieldId, null)
+                setSubmitError(null)
+                setFieldValue(c.categoryid, f.key, file)
+              }}
             />
+            <p className="text-xs text-slate-500">Maksimum {MAX_IMAGE_SIZE_LABEL} per gambar. Format: JPG, PNG, atau sesuai ketentuan kegiatan.</p>
+            {fileError && <p className="text-xs text-red-600">{fileError}</p>}
           </div>
         )
       case "text_image":
@@ -384,19 +481,37 @@ export default function SiswaKegiatanDetail() {
                 setFieldValue(c.categoryid, f.key, { ...(v || {}), text: e.target.value })
               }
             />
-            <div className="rounded-xl border border-dashed border-emerald-100 bg-white/70 p-3">
+            <div className="rounded-xl border border-dashed border-emerald-100 bg-white/70 p-3 space-y-2">
               <input
                 type="file"
                 accept={f?.config?.accept || "image/*"}
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100/80 file:px-4 file:py-2 file:font-medium file:text-emerald-700 hover:file:bg-emerald-100"
                 disabled={disabled}
-                onChange={(e) =>
-                  setFieldValue(c.categoryid, f.key, {
-                    ...(v || {}),
-                    image: e.target.files?.[0] || null,
-                  })
-                }
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null
+                  const current = (v && typeof v === "object") ? v : {}
+                  if (!file) {
+                    updateFileError(fieldId, null)
+                    setFieldValue(c.categoryid, f.key, { ...current, image: null })
+                    return
+                  }
+
+                  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+                    const message = `Ukuran file ${file.name} (${formatSizeMb(file.size)}) melebihi batas ${MAX_IMAGE_SIZE_LABEL}.`
+                    updateFileError(fieldId, message)
+                    setSubmitError(message)
+                    setFieldValue(c.categoryid, f.key, { ...current, image: null })
+                    e.target.value = ""
+                    return
+                  }
+
+                  updateFileError(fieldId, null)
+                  setSubmitError(null)
+                  setFieldValue(c.categoryid, f.key, { ...current, image: file })
+                }}
               />
+              <p className="text-xs text-slate-500">Maksimum {MAX_IMAGE_SIZE_LABEL} per gambar. Format: JPG, PNG, atau sesuai ketentuan kegiatan.</p>
+              {fileError && <p className="text-xs text-red-600">{fileError}</p>}
             </div>
           </div>
         )

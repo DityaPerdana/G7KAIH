@@ -3,6 +3,8 @@ import { createClient } from "@/utils/supabase/server"
 import { NextResponse } from "next/server"
 
 const JAKARTA_TZ = "Asia/Jakarta"
+const MAX_IMAGE_SIZE_BYTES = 3 * 1024 * 1024 // 3MB per image
+const MAX_IMAGE_SIZE_MB = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
 
 function todayInJakarta(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -109,6 +111,27 @@ export async function POST(request: Request) {
 
     if (!kegiatanid) {
       return NextResponse.json({ error: "kegiatanid wajib diisi" }, { status: 400 })
+    }
+
+    if (incomingFiles.length) {
+      const oversized = incomingFiles.filter((f) => f.file.size > MAX_IMAGE_SIZE_BYTES)
+      if (oversized.length) {
+        const formatted = oversized
+          .map((f) => {
+            const sizeMb = f.file.size / (1024 * 1024)
+            const rounded = sizeMb % 1 === 0 ? sizeMb.toFixed(0) : sizeMb.toFixed(1)
+            return `${f.file.name || "berkas tanpa nama"} (${rounded}MB)`
+          })
+          .join(", ")
+
+        return NextResponse.json(
+          {
+            error: `Ukuran file maksimal ${(MAX_IMAGE_SIZE_MB % 1 === 0 ? MAX_IMAGE_SIZE_MB.toFixed(0) : MAX_IMAGE_SIZE_MB.toFixed(1))}MB per gambar. File terlalu besar: ${formatted}`,
+            code: "IMAGE_TOO_LARGE",
+          },
+          { status: 413 }
+        )
+      }
     }
 
     const supabase = await createClient()
@@ -262,10 +285,11 @@ export async function POST(request: Request) {
           continue
         }
         
-        // Check file size (limit to 5MB)
-        const maxSize = 5 * 1024 * 1024 // 5MB
-        if (f.file.size > maxSize) {
-          warnings.push(`File ${f.file.name} terlalu besar (${Math.round(f.file.size / 1024 / 1024)}MB). Maksimal 5MB.`)
+        // Safety guard: should be caught earlier, but keep warning fallback
+        if (f.file.size > MAX_IMAGE_SIZE_BYTES) {
+          const sizeMb = f.file.size / (1024 * 1024)
+          const rounded = sizeMb % 1 === 0 ? sizeMb.toFixed(0) : sizeMb.toFixed(1)
+          warnings.push(`File ${f.file.name} terlalu besar (${rounded}MB). Maksimal ${MAX_IMAGE_SIZE_MB % 1 === 0 ? MAX_IMAGE_SIZE_MB.toFixed(0) : MAX_IMAGE_SIZE_MB.toFixed(1)}MB.`)
           continue
         }
         
