@@ -1,6 +1,14 @@
 import { createClient } from "@/utils/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
+type StudentRow = {
+  userid: string
+  username: string | null
+  kelas: string | null
+  email: string | null
+  guruwali_userid: string | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -10,36 +18,67 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify user is a teacher
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('roleid')
-      .eq('userid', user.id)
+    const { data: userProfile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("roleid, kelas, is_guruwali, is_wali_kelas")
+      .eq("userid", user.id)
       .single()
 
-    if (!userProfile || userProfile.roleid !== 2) { // Assuming roleid 2 is teacher
+    if (profileError || !userProfile || userProfile.roleid !== 2) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 })
     }
 
-  const searchParams = request.nextUrl.searchParams
-  const date = searchParams.get("date") || new Date().toISOString().split('T')[0]
+    const className = userProfile.kelas?.trim() || null
+    const isGuruWali = Boolean(userProfile.is_guruwali)
 
-    // Validate date format
+    if (!className && !isGuruWali) {
+      return NextResponse.json({
+        error: "Teacher must have a class assignment or guru wali designation"
+      }, { status: 400 })
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const date = searchParams.get("date") || new Date().toISOString().split("T")[0]
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ error: "Invalid date format. Use YYYY-MM-DD" }, { status: 400 })
     }
 
-    // Get all students (role 5)
-    const { data: students, error: studentsError } = await supabase
-      .from('user_profiles')
-      .select('userid, username, kelas, email')
-      .eq('roleid', 5) // Student role
-      .order('username')
+    const studentMap = new Map<string, StudentRow>()
 
-    if (studentsError) throw studentsError
+    if (className) {
+      const { data: classStudents, error: classError } = await supabase
+        .from("user_profiles")
+        .select("userid, username, kelas, email, guruwali_userid")
+        .eq("roleid", 5)
+        .eq("kelas", className)
+        .order("username")
 
-    if (!students || students.length === 0) {
-      return NextResponse.json({ 
+      if (classError) throw classError
+      for (const student of classStudents || []) {
+        if (student?.userid) studentMap.set(student.userid, student)
+      }
+    }
+
+    if (isGuruWali) {
+      const { data: guruWaliStudents, error: guruWaliError } = await supabase
+        .from("user_profiles")
+        .select("userid, username, kelas, email, guruwali_userid")
+        .eq("roleid", 5)
+        .eq("guruwali_userid", user.id)
+        .order("username")
+
+      if (guruWaliError) throw guruWaliError
+      for (const student of guruWaliStudents || []) {
+        if (student?.userid) studentMap.set(student.userid, student)
+      }
+    }
+
+    const scopedStudents = Array.from(studentMap.values())
+      .sort((a, b) => (a.username || "").localeCompare(b.username || ""))
+
+    if (scopedStudents.length === 0) {
+      return NextResponse.json({
         data: {
           date,
           totalStudents: 0,
@@ -50,31 +89,28 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Set date range for the specific day
-    const startDate = new Date(date + "T00:00:00.000Z")
-    const endDate = new Date(date + "T23:59:59.999Z")
+    const studentIds = scopedStudents.map(student => student.userid)
 
-    // Get activities for all students on the specified date
+    const startDate = new Date(`${date}T00:00:00.000Z`)
+    const endDate = new Date(`${date}T23:59:59.999Z`)
+
     const { data: activities, error: activitiesError } = await supabase
-      .from('aktivitas')
-      .select('userid, activityid, activityname, created_at')
-      .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString())
+      .from("aktivitas")
+      .select("userid, activityid, activityname, created_at")
+      .in("userid", studentIds)
+      .gte("created_at", startDate.toISOString())
+      .lte("created_at", endDate.toISOString())
 
     if (activitiesError) throw activitiesError
 
-    // Create a set of student IDs who have activities
     const activeStudentIds = new Set((activities || []).map(activity => activity.userid))
 
-    // Find students who don't have activities
-    const inactiveStudents = students.filter(student => !activeStudentIds.has(student.userid))
-    
-    // Find students who have activities  
-    const activeStudents = students.filter(student => activeStudentIds.has(student.userid))
+    const inactiveStudents = scopedStudents.filter(student => !activeStudentIds.has(student.userid))
+    const activeStudents = scopedStudents.filter(student => activeStudentIds.has(student.userid))
 
     const result = {
       date,
-      totalStudents: students.length,
+      totalStudents: scopedStudents.length,
       activeStudents: activeStudents.length,
       inactiveStudents: inactiveStudents.map(student => ({
         userid: student.userid,
@@ -89,7 +125,7 @@ export async function GET(request: NextRequest) {
         email: student.email,
         activities: (activities || []).filter(activity => activity.userid === student.userid)
       })),
-      activeRate: students.length > 0 ? Math.round((activeStudents.length / students.length) * 100) : 0
+      activeRate: scopedStudents.length > 0 ? Math.round((activeStudents.length / scopedStudents.length) * 100) : 0
     }
 
     return NextResponse.json({ data: result })
@@ -102,3 +138,4 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
