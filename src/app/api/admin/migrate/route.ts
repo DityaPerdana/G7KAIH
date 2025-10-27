@@ -1,11 +1,38 @@
 import { createClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
+import { createClient as createServerClient } from "@/utils/supabase/server"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: Verify the user is authenticated and has admin role
+    const supabase = await createServerClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Unauthorized: Authentication required" 
+      }, { status: 401 })
+    }
+
+    // Check if user has admin role (roleid = 1)
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('roleid')
+      .eq('userid', user.id)
+      .single()
+
+    if (profileError || !profile || profile.roleid !== 1) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Forbidden: Admin access required" 
+      }, { status: 403 })
+    }
+
+    // Create admin client only after authorization check
     const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
