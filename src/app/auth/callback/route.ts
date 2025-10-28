@@ -1,158 +1,180 @@
-import { createClient } from '@/utils/supabase/server'
-import { NextResponse } from 'next/server'
+import { createClient } from "@/utils/supabase/server";
+import { NextResponse } from "next/server";
 
-import { sanitizeRedirectPath } from '@/utils/lib/sanitize-redirect'
+import { sanitizeRedirectPath } from "@/utils/lib/sanitize-redirect";
 
 const roleRedirectMap: Record<string, string> = {
-  unknown: '/unknown',
-  student: '/siswa',
-  teacher: '/guru',
-  parent: '/orangtua',
-  admin: '/dashboard',
-}
+  unknown: "/unknown",
+  student: "/siswa",
+  teacher: "/guru",
+  parent: "/orangtua",
+  admin: "/dashboard",
+};
 
 function resolveAppOrigin(request: Request) {
-  const forwardedProto = request.headers.get('x-forwarded-proto')
-  const forwardedHost = request.headers.get('x-forwarded-host')
-  const forwardedPort = request.headers.get('x-forwarded-port')
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedPort = request.headers.get("x-forwarded-port");
 
   if (forwardedProto && forwardedHost) {
-    const cleanedHost = forwardedPort && !forwardedHost.includes(':')
-      ? `${forwardedHost}:${forwardedPort}`
-      : forwardedHost
-    return `${forwardedProto}://${cleanedHost}`
+    const cleanedHost =
+      forwardedPort && !forwardedHost.includes(":")
+        ? `${forwardedHost}:${forwardedPort}`
+        : forwardedHost;
+    return `${forwardedProto}://${cleanedHost}`;
   }
 
   const explicitAppUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_BASE_URL ||
-    process.env.SITE_URL
+    process.env.SITE_URL;
 
   if (explicitAppUrl) {
-    return explicitAppUrl
+    return explicitAppUrl;
   }
 
-  const host = request.headers.get('host')
+  const host = request.headers.get("host");
   if (host) {
-    const protocol = request.url.startsWith('https') ? 'https' : 'http'
-    const origin = `${protocol}://${host}`
-    if (!origin.includes('localhost')) {
-      return origin
+    const protocol = request.url.startsWith("https") ? "https" : "http";
+    const origin = `${protocol}://${host}`;
+    if (!origin.includes("localhost")) {
+      return origin;
     }
   }
 
-  const derivedOrigin = new URL(request.url).origin
-  if (!derivedOrigin.includes('localhost')) {
-    return derivedOrigin
+  const derivedOrigin = new URL(request.url).origin;
+  if (!derivedOrigin.includes("localhost")) {
+    return derivedOrigin;
   }
 
-  return 'https://g7kaih.tefa-bcs.org'
+  return "https://g7kaih.tefa-bcs.org";
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const origin = resolveAppOrigin(request)
-  const requestedRedirect = sanitizeRedirectPath(searchParams.get('origin') ?? searchParams.get('next'))
-  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, origin), 302)
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
+  const origin = resolveAppOrigin(request);
+  const requestedRedirect = sanitizeRedirectPath(
+    searchParams.get("origin") ?? searchParams.get("next")
+  );
+  const redirectTo = (path: string) =>
+    NextResponse.redirect(new URL(path, origin), 302);
 
   if (code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    
+    const supabase = await createClient();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
       // Get user and check their role
-      const { data: { user } } = await supabase.auth.getUser()
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (user) {
-        console.log('User authenticated:', user.id, 'Email:', user.email) // Debug log
-        
+        console.log("User authenticated:", user.id, "Email:", user.email); // Debug log
+
         // Wait a bit for trigger to complete
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
         // Try to get by userid first
         let { data: profile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('userid, username, roleid')
-          .eq('userid', user.id)
-          .single()
+          .from("user_profiles")
+          // include is_guruwali so callback can redirect directly to /guruwali when applicable
+          .select("userid, username, roleid, is_guruwali")
+          .eq("userid", user.id)
+          .single();
 
-        console.log('Profile query result:', profile, 'Error:', profileError) // Debug log
+        console.log("Profile query result:", profile, "Error:", profileError); // Debug log
 
         if (!profile) {
           // If not found, try to find an existing profile by email and link it
-          const userEmail = user.email ?? null
-          console.log('Profile not found by userid, trying email:', userEmail) // Debug log
+          const userEmail = user.email ?? null;
+          console.log("Profile not found by userid, trying email:", userEmail); // Debug log
           if (userEmail) {
             const { data: byEmail, error: emailError } = await supabase
-              .from('user_profiles')
-              .select('userid, username, roleid')
-              .eq('email', userEmail)
-              .maybeSingle()
+              .from("user_profiles")
+              .select("userid, username, roleid, is_guruwali")
+              .eq("email", userEmail)
+              .maybeSingle();
 
-            console.log('Profile by email:', byEmail, 'Error:', emailError) // Debug log
+            console.log("Profile by email:", byEmail, "Error:", emailError); // Debug log
 
             if (byEmail) {
               // Link existing email profile to this auth user id
               const { data: updated } = await supabase
-                .from('user_profiles')
+                .from("user_profiles")
                 .update({ userid: user.id })
-                .eq('email', userEmail)
-                .select('userid, username, roleid')
-                .single()
-              profile = updated ?? byEmail
+                .eq("email", userEmail)
+                .select("userid, username, roleid, is_guruwali")
+                .single();
+              profile = updated ?? byEmail;
             }
           }
 
           // Still no profile, create one manually
           if (!profile) {
-            const defaultUsername = user.email?.split('@')[0] || 'user'
+            const defaultUsername = user.email?.split("@")[0] || "user";
             const { data: created } = await supabase
-              .from('user_profiles')
+              .from("user_profiles")
               .insert({
                 userid: user.id,
                 username: defaultUsername,
                 email: user.email ?? null,
                 roleid: 1, // unknown role
+                is_guruwali: false,
               })
-              .select('userid, username, roleid')
-              .single()
+              .select("userid, username, roleid, is_guruwali")
+              .single();
 
-            profile = created ?? null
+            profile = created ?? null;
           }
         }
 
-        console.log('User profile:', profile) // Debug log
+        console.log("User profile:", profile); // Debug log
 
         if (requestedRedirect) {
-          return redirectTo(requestedRedirect)
+          return redirectTo(requestedRedirect);
         }
 
         if (profile?.roleid) {
+          // Determine guruwali role vs access flag. Only users whose role is explicitly
+          // 'guruwali' (roleid === 6) should be forced to the /guruwali landing page.
+          const hasGuruWaliAccess = profile?.is_guruwali === true;
+          const isGuruWaliRole = profile?.roleid === 6;
+          if (isGuruWaliRole) {
+            return redirectTo("/guruwali");
+          }
+
           // Get role name separately
           const { data: roleData } = await supabase
-            .from('role')
-            .select('rolename')
-            .eq('roleid', profile.roleid)
-            .single()
+            .from("role")
+            .select("rolename")
+            .eq("roleid", profile.roleid)
+            .single();
 
-          const roleName = roleData?.rolename
+          const roleName = roleData?.rolename;
+          const normalizedRole = roleName?.toLowerCase();
 
-          console.log('Role name:', roleName) // Debug log
-          
+          console.log("Role name:", roleName); // Debug log
+
+          // If role name explicitly 'guruwali', redirect there.
+          if (normalizedRole === "guruwali") {
+            return redirectTo("/guruwali");
+          }
+
           // Redirect based on role
-          const fallbackPath = roleRedirectMap[roleName ?? ''] ?? '/unknown'
-          return redirectTo(fallbackPath)
+          const fallbackPath = roleRedirectMap[roleName ?? ""] ?? "/unknown";
+          return redirectTo(fallbackPath);
         } else {
           // No profile found, redirect to unknown
-          console.log('No role found, redirecting to unknown')
-          return redirectTo('/unknown')
+          console.log("No role found, redirecting to unknown");
+          return redirectTo("/unknown");
         }
       }
     } else {
-      console.error('Auth error:', error)
+      console.error("Auth error:", error);
     }
   }
 
-  return redirectTo('/auth/auth-code-error')
+  return redirectTo("/auth/auth-code-error");
 }
