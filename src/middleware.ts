@@ -177,11 +177,11 @@ export async function middleware(request: NextRequest) {
         if (roleKey === 'student') {
           return NextResponse.redirect(new URL('/siswa', request.url), 302)
         }
-        if (isGuruWali) {
-          return NextResponse.redirect(new URL('/guruwali', request.url), 302)
-        }
         if (roleKey === 'teacher') {
           return NextResponse.redirect(new URL('/guru', request.url), 302)
+        }
+        if (isGuruWali) {
+          return NextResponse.redirect(new URL('/guruwali', request.url), 302)
         }
         if (roleKey === 'parent') {
           return NextResponse.redirect(new URL('/orangtua', request.url), 302)

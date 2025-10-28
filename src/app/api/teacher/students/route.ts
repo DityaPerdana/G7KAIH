@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -59,7 +60,7 @@ export async function GET() {
     // Get current user's profile to get their class and verify they are a teacher
     const { data: teacherProfile, error: profileError } = await authSupabase
       .from('user_profiles')
-      .select('userid, username, kelas, roleid')
+      .select('userid, username, kelas, roleid, is_guruwali')
       .eq('userid', user.id)
       .single()
 
@@ -76,10 +77,10 @@ export async function GET() {
       }, { status: 403 })
     }
 
-    // Get teacher's class
-    const teacherClass = teacherProfile.kelas;
+    const teacherClass = teacherProfile.kelas
+    const isGuruWaliAccess = teacherProfile.roleid === 6 || Boolean(teacherProfile.is_guruwali)
     
-    if (!teacherClass) {
+    if (!teacherClass && !isGuruWaliAccess) {
       return NextResponse.json({ 
         error: "Teacher must have a class assigned" 
       }, { status: 400 })
@@ -89,107 +90,76 @@ export async function GET() {
     
     // Serve from cache when fresh - but we need to filter by teacher's class
     if (CACHE && Date.now() < CACHE.expiresAt) {
-      const filteredData = CACHE.data.filter((student: any) => student.class === teacherClass)
-      return NextResponse.json({ data: filteredData })
+      const cachedData = isGuruWaliAccess
+        ? CACHE.data
+        : CACHE.data.filter((student: any) => student.class === teacherClass)
+      return NextResponse.json({ data: cachedData })
     }
 
-  const supabase = await createClient()
+    const supabase = await createClient()
 
-    // Fetch roles to find the role id for students (case-insensitive match)
     const { data: roles, error: roleErr } = await supabase
       .from("role")
       .select("roleid, rolename")
 
     if (roleErr) throw roleErr
 
-    const siswaRoleId = roles?.find((r) => 
-      String(r.rolename).toLowerCase() === "siswa" || 
+    const siswaRoleId = roles?.find((r) =>
+      String(r.rolename).toLowerCase() === "siswa" ||
       String(r.rolename).toLowerCase() === "student"
-    )?.roleid || 5 // Default to 5 if not found
+    )?.roleid || 5
 
-  // Fetch profiles; always fetch all and filter later if needed
-  const { data: profiles, error: profErr } = await supabase
-    .from("user_profiles")
-    .select("userid, username, email, roleid, kelas, created_at, updated_at")
-  if (profErr) throw profErr
-  let profilesData: any[] = profiles || []
-  console.log("Profiles fetched:", profilesData.length, profilesData)  // If we have profiles (e.g., siswa), start from them, but also include orphan activity userids as placeholders.
-  let userIds: string[] = (profilesData || []).map((p: any) => p.userid)
-  // We'll fetch activities once and aggregate in-memory
-  let acts: any[] = []
+    const studentSelect = "userid, username, email, roleid, kelas, created_at, updated_at, guruwali_userid"
+    const studentMap = new Map<string, any>()
 
-    if (userIds.length > 0) {
-      // Also include orphan activity userids not present in profiles (safe placeholder, no remapping)
-      let orphanIds: string[] = []
-      if (userIds.length > 0) {
-        // Build a properly quoted IN list for PostgREST `in` filter
-        const inList = `(${userIds.map((id) => `"${id}"`).join(',')})`
-        const { data: orphanActs, error: orphanErr } = await supabase
-          .from("aktivitas")
-          .select("userid")
-          .not("userid", "in", inList)
-          .limit(50)
-        if (!orphanErr) {
-          const set = new Set<string>()
-          for (const a of orphanActs || []) {
-            if (a?.userid) set.add(a.userid as string)
-          }
-          orphanIds = Array.from(set)
-        }
-      }
-
-  // Merge known users + orphans, then expand with verified alias sets (e.g., Raditya)
-  let allUserIds = Array.from(new Set([...(userIds || []), ...orphanIds]))
-  allUserIds = expandWithVerifiedAliases(allUserIds)
-
-      // Single fetch of activities for all relevant user ids
-      const { data: allActs, error: allActErr } = await supabase
-        .from("aktivitas")
-        .select("userid, status, created_at")
-        .in("userid", allUserIds)
-      if (allActErr) throw allActErr
-      acts = allActs || []
-
-      // Extend profiles with placeholders for orphanIds so they appear in the list
-      const placeholderProfiles = (orphanIds || []).map((uid) => ({
-        userid: uid,
-        username: null,
-        email: null,
-        roleid: siswaRoleId || 5, // Assume orphans are students
-        kelas: null,
-        created_at: null,
-        updated_at: null,
-      }))
-      profilesData = [
-        ...(profilesData || []),
-        ...placeholderProfiles,
-      ]
-      userIds = allUserIds
-    } else {
-      // Full fallback: build from aktivitas if there are no profiles at all
-  const { data: allActs, error: actErr } = await supabase
-        .from("aktivitas")
-        .select("userid, status, created_at")
-      if (actErr) throw actErr
-      acts = allActs || []
-  userIds = Array.from(new Set(acts.map((a: any) => a.userid).filter(Boolean))) as string[]
-  // Ensure we include all verified aliases for any user we saw
-  userIds = expandWithVerifiedAliases(userIds)
-      if (userIds.length === 0) {
-        return NextResponse.json({ data: [] })
-      }
-      // Try to fetch profiles for these users (some may not exist)
-      const { data: prof2, error: prof2Err } = await supabase
+    if (teacherClass) {
+      const { data: classStudents, error: classErr } = await supabase
         .from("user_profiles")
-        .select("userid, username, email, roleid, kelas, created_at, updated_at")
-        .in("userid", userIds)
-      if (prof2Err) throw prof2Err
-      profilesData = prof2 || []
+        .select(studentSelect)
+        .eq("roleid", siswaRoleId)
+        .eq("kelas", teacherClass)
+
+      if (classErr) throw classErr
+      for (const student of classStudents || []) {
+        if (student?.userid) studentMap.set(student.userid, student)
+      }
     }
 
+    if (isGuruWaliAccess) {
+      const { data: assignedStudents, error: assignedErr } = await supabase
+        .from("user_profiles")
+        .select(studentSelect)
+        .eq("roleid", siswaRoleId)
+        .eq("guruwali_userid", teacherProfile.userid)
+
+      if (assignedErr) throw assignedErr
+      for (const student of assignedStudents || []) {
+        if (student?.userid) studentMap.set(student.userid, student)
+      }
+    }
+
+    const profilesData: any[] = Array.from(studentMap.values())
+
+    if (profilesData.length === 0) {
+      CACHE = { data: [], expiresAt: Date.now() + CACHE_TTL_MS }
+      return NextResponse.json({ data: [] })
+    }
+
+    let userIds: string[] = profilesData.map((p: any) => p.userid)
+    userIds = expandWithVerifiedAliases(userIds)
+
+    const { data: acts, error: actsErr } = await supabase
+      .from("aktivitas")
+      .select("userid, status, created_at")
+      .in("userid", userIds)
+
+    if (actsErr) throw actsErr
+
+    const activityRows: any[] = acts || []
+
     // Consolidate into byUser from acts
-  const byUser: Record<string, { total: number; completed: number; last?: string }> = {}
-    for (const a of acts) {
+    const byUser: Record<string, { total: number; completed: number; last?: string }> = {}
+    for (const a of activityRows) {
       const u = a.userid as string
       if (!u) continue
       if (!byUser[u]) byUser[u] = { total: 0, completed: 0, last: undefined }
@@ -245,7 +215,7 @@ export async function GET() {
     if (missingIds.length > 0) {
       const { data: refill, error: refillErr } = await supabase
         .from("user_profiles")
-        .select("userid, username, email, roleid, kelas, created_at, updated_at")
+        .select("userid, username, email, roleid, kelas, created_at, updated_at, guruwali_userid")
         .in("userid", missingIds)
       if (!refillErr && refill) {
         for (const r of refill) {
@@ -263,21 +233,22 @@ export async function GET() {
       .filter(([, p]) => !p?.username && !p?.email)
       .map(([uid]) => uid)
     const authMap = new Map<string, { email?: string; name?: string }>()
-    if (toEnrich.length > 0) {
-      // Fetch users one-by-one via Admin API (small sets; avoids relying on PostgREST auth schema exposure)
-      const results = await Promise.all(
-        toEnrich.map(async (uid) => {
-          try {
-            const res = await supabase.auth.admin.getUserById(uid)
-            const user = res?.data?.user
-            if (user) {
-              // Prefer explicit name from user metadata; fallback to identities if present
-              const meta: any = (user as any).user_metadata || (user as any).raw_user_meta_data || {}
-              let fullName: string | undefined = meta.full_name || meta.name
-              let email: string | undefined = (user as any).email
+    if (toEnrich.length > 0 && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const adminClient = await createAdminClient()
+        await Promise.all(
+          toEnrich.map(async (uid) => {
+            try {
+              const { data: adminData, error: adminError } = await adminClient.auth.admin.getUserById(uid)
+              if (adminError || !adminData?.user) return
 
-              if (!fullName && Array.isArray((user as any).identities)) {
-                for (const ident of (user as any).identities) {
+              const user = adminData.user as any
+              const meta: any = user.user_metadata || user.raw_user_meta_data || {}
+              let fullName: string | undefined = meta.full_name || meta.name
+              let email: string | undefined = user.email
+
+              if (!fullName && Array.isArray(user.identities)) {
+                for (const ident of user.identities) {
                   const idata: any = ident.identity_data || {}
                   const n = idata.full_name || idata.name || [idata.given_name, idata.family_name].filter(Boolean).join(" ")
                   const e = idata.email
@@ -287,13 +258,14 @@ export async function GET() {
               }
 
               authMap.set(uid, { email, name: fullName })
+            } catch {
+              // ignore per-user fetch errors
             }
-          } catch (e) {
-            // ignore per-user fetch errors
-          }
-        })
-      )
-      void results
+          })
+        )
+      } catch {
+        // Service role unavailable; skip admin enrichment gracefully
+      }
     }
 
     // Return profiles (plus placeholders) as cards, de-duped by verified alias primary ID
@@ -332,17 +304,16 @@ export async function GET() {
       }
     })
 
-    // Filter to only include students if siswaRoleId is found
     if (siswaRoleId) {
       data = data.filter(d => d.roleid === siswaRoleId)
     }
-    
-    // Filter students by teacher's class
-    data = data.filter(d => d.class === teacherClass)
-    
-    // Store in cache (best effort)
+
+    if (teacherClass && !isGuruWaliAccess) {
+      data = data.filter(d => d.class === teacherClass)
+    }
+
     CACHE = { data, expiresAt: Date.now() + CACHE_TTL_MS }
-    console.log("Final data filtered for class:", teacherClass, data)
+    console.log("Final student count:", data.length)
     return NextResponse.json({ data })
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Unexpected error" }, { status: 500 })
