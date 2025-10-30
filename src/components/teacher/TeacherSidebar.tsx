@@ -105,6 +105,7 @@ export function TeacherSidebar({
       case 4: return "Parent"
       case 5: return "Student"
       case 6: return "Guru Wali"
+      case 7: return "Kepsek"
       default: return "Unknown"
     }
   }

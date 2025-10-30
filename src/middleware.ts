@@ -214,6 +214,24 @@ export async function middleware(request: NextRequest) {
         }
       }
 
+      // If accessing /kepsek, require the kepsek role
+      if (pathname.startsWith("/kepsek") && roleKey !== "kepsek") {
+        switch (roleKey) {
+          case "admin":
+            return NextResponse.redirect(new URL("/dashboard", request.url), 302);
+          case "teacher":
+            return NextResponse.redirect(new URL("/guru", request.url), 302);
+          case "guruwali":
+            return NextResponse.redirect(new URL("/guruwali", request.url), 302);
+          case "student":
+            return NextResponse.redirect(new URL("/siswa", request.url), 302);
+          case "parent":
+            return NextResponse.redirect(new URL("/orangtua", request.url), 302);
+          default:
+            return NextResponse.redirect(new URL("/unknown", request.url), 302);
+        }
+      }
+
       if (pathname.startsWith("/orangtua") && roleKey !== "parent") {
         // Redirect to appropriate role page instead of unknown
         switch (roleKey) {
@@ -254,6 +272,10 @@ export async function middleware(request: NextRequest) {
         // who only have the guruwali access flag don't get redirected to /guruwali by default.
         if (isGuruWaliRole) {
           return NextResponse.redirect(new URL("/guruwali", request.url), 302);
+        }
+        // Redirect kepsek to their panel
+        if (roleKey === "kepsek") {
+          return NextResponse.redirect(new URL("/kepsek", request.url), 302);
         }
         if (roleKey === "teacher") {
           return NextResponse.redirect(new URL("/guru", request.url), 302);

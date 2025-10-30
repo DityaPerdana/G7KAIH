@@ -105,6 +105,8 @@ export async function login(formData: FormData) {
           redirect("/guru");
         case "parent":
           redirect("/orangtua");
+        case "kepsek":
+          redirect("/kepsek");
         case "unknown":
           redirect("/unknown");
         default:

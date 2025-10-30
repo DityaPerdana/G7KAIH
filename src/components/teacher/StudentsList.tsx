@@ -20,12 +20,30 @@ type Student = {
   status: "active" | "inactive" | "completed"
 }
 
+type StudentVariant = "teacher" | "guruwali" | "kepsek"
+
 const STUDENT_CACHE_TTL = 60_000
 
-async function fetchStudents(isGuruWali = false, signal?: AbortSignal): Promise<Student[]> {
-  const endpoint = isGuruWali ? "/api/guruwali/students" : "/api/teacher/students"
+interface FetchStudentsOptions {
+  variant: StudentVariant
+  kelas?: string
+  signal?: AbortSignal
+}
+
+async function fetchStudents({ variant, kelas, signal }: FetchStudentsOptions): Promise<Student[]> {
+  let endpoint = "/api/teacher/students"
+
+  if (variant === "guruwali") {
+    endpoint = "/api/guruwali/students"
+  } else if (variant === "kepsek") {
+    const params = kelas ? `?kelas=${encodeURIComponent(kelas)}` : ""
+    endpoint = `/api/kepsek/students${params}`
+  }
+
   const response = await fetch(endpoint, { cache: "no-store", signal })
-  const json = await response.json().catch(() => ({} as { data?: Student[]; error?: string }))
+  const json = await response
+    .json()
+    .catch(() => ({} as { data?: Student[]; error?: string }))
 
   if (!response.ok) {
     throw new Error(json?.error || "Failed to load students")
@@ -86,10 +104,31 @@ const getStatusText = (status: Student["status"]) => {
   }
 }
 
-export function StudentsList() {
+const decodeURIComponentSafe = (value?: string) => {
+  if (!value) return undefined
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+type StudentsListProps = {
+  variant?: StudentVariant
+  kelas?: string
+}
+
+export function StudentsList({ variant, kelas }: StudentsListProps = {}) {
   const router = useRouter()
   const pathname = usePathname()
-  const isGuruWali = pathname.startsWith("/guruwali")
+  const derivedVariant = React.useMemo<StudentVariant>(() => {
+    if (variant) return variant
+    if (pathname.startsWith("/guruwali")) return "guruwali"
+    if (pathname.startsWith("/kepsek")) return "kepsek"
+    return "teacher"
+  }, [variant, pathname])
+
+  const kelasFilter = kelas ?? (derivedVariant === "kepsek" ? decodeURIComponentSafe(pathname.split("/kepsek/kelas/")[1]?.split("/")[0] ?? "") : undefined)
 
   const [students, setStudents] = React.useState<Student[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -100,10 +139,21 @@ export function StudentsList() {
   const cacheRef = React.useRef<Map<string, { timestamp: number; data: Student[] }>>(new Map())
   const abortRef = React.useRef<AbortController | null>(null)
 
+  const cacheKey = React.useMemo(() => {
+    const kelasKey = kelasFilter ? kelasFilter.toLowerCase() : "all"
+    return `${derivedVariant}-${kelasKey}`
+  }, [derivedVariant, kelasFilter])
+
   const fetchAndCacheStudents = React.useCallback(
     async (forceRefresh = false) => {
-      const cacheKey = isGuruWali ? "guruwali" : "guru"
       const now = Date.now()
+
+      if (derivedVariant === "kepsek" && !kelasFilter) {
+        setError("Pilih kelas terlebih dahulu")
+        setStudents([])
+        setLoading(false)
+        return
+      }
 
       if (!forceRefresh) {
         const cached = cacheRef.current.get(cacheKey)
@@ -128,7 +178,11 @@ export function StudentsList() {
       abortRef.current = controller
 
       try {
-        const data = await fetchStudents(isGuruWali, controller.signal)
+        const data = await fetchStudents({
+          variant: derivedVariant,
+          kelas: kelasFilter,
+          signal: controller.signal,
+        })
         if (controller.signal.aborted) return
         setStudents(data)
         cacheRef.current.set(cacheKey, { timestamp: Date.now(), data })
@@ -145,7 +199,7 @@ export function StudentsList() {
         setLoading(false)
       }
     },
-    [isGuruWali]
+    [derivedVariant, kelasFilter, cacheKey]
   )
 
   React.useEffect(() => {
@@ -183,10 +237,15 @@ export function StudentsList() {
 
   const handleViewStudent = React.useCallback(
     (student: Student, mode: "kalender" | "detail") => {
-      const basePath = isGuruWali ? "/guruwali" : "/guru"
+      if (derivedVariant === "kepsek") {
+        router.push(`/kepsek/kelas/siswa/${student.id}`)
+        return
+      }
+
+      const basePath = derivedVariant === "guruwali" ? "/guruwali" : "/guru"
       router.push(`${basePath}/siswa/${student.id}/${mode}`)
     },
-    [isGuruWali, router]
+    [derivedVariant, router]
   )
 
   if (loading) {
@@ -205,6 +264,13 @@ export function StudentsList() {
     )
   }
 
+  const headerTitle = derivedVariant === "kepsek" && kelasFilter
+    ? `Kelas ${kelasFilter}`
+    : "Panel Aktivitas"
+  const headerSubtitle = derivedVariant === "kepsek"
+    ? "Pantau aktivitas siswa di kelas ini"
+    : "Pantau aktivitas siswa"
+
   return (
     <>
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -213,8 +279,8 @@ export function StudentsList() {
             <div className="flex items-center gap-4">
               <SidebarTrigger />
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Panel Aktivitas</h1>
-                <p className="text-sm text-gray-500">Pantau aktivitas siswa</p>
+                <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
+                <p className="text-sm text-gray-500">{headerSubtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
